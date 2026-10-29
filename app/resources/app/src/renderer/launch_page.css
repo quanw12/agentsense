@@ -536,7 +536,7 @@
 
 .launch_seat_row {
   display: grid;
-  grid-template-columns: 18px 16px minmax(0, 1fr);
+  grid-template-columns: 18px 16px minmax(0, 2fr) minmax(0, 3fr);
   align-items: center;
   gap: 10px;
   height: 30px;
@@ -832,4 +832,263 @@
 .tg-notice-close:hover {
   background: var(--panel_raised);
   color: var(--text);
+}
+
+/* Model & API section: header row with "Manage APIs", the stored endpoints, then the add/edit form. */
+
+.launch_api_head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.launch_api_head .launch_section_title {
+  margin-right: auto;
+}
+
+.launch_api_toggle {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--border_strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.launch_api_toggle:hover {
+  background: var(--panel);
+}
+
+.launch_api_toggle.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.launch_api_note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.launch_api_manager {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.launch_api_list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.launch_api_row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.launch_api_row:last-child {
+  border-bottom: 0;
+}
+
+.launch_api_left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.launch_api_name {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.launch_api_kind {
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+.launch_api_url {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launch_api_models {
+  color: var(--muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.launch_api_icon {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.launch_api_edit,
+.launch_api_remove {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.launch_api_edit:hover,
+.launch_api_remove:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.launch_api_form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border_strong);
+  border-radius: 8px;
+  background: var(--panel_raised);
+}
+
+.launch_api_input {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.launch_api_input [type='password'] {
+  letter-spacing: 2px;
+}
+
+.launch_api_input:first-child {
+  flex: 0 0 180px;
+}
+
+.launch_api_input:nth-child(3) {
+  flex: 1 1 180px;
+  min-width: 120px;
+}
+
+.launch_api_input:nth-child(4),
+.launch_api_input:nth-child(5) {
+  flex: 1 1 100%;
+}
+
+.launch_api_kind_select {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+}
+
+.launch_api_form_note {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.launch_api_actions {
+  flex: 1 1 100%;
+  display: flex;
+  gap: 6px;
+}
+
+.launch_api_save {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.launch_api_save:hover:not(:disabled) {
+  background: var(--accent_fill);
+}
+
+.launch_api_save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.launch_api_form_cancel {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.launch_api_form_cancel:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.launch_api_add {
+  align-self: flex-start;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px dashed var(--border_strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.launch_api_add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }

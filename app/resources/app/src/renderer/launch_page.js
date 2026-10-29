@@ -12,6 +12,16 @@
   const INSTALL_ACTION = 'install';
   const PRESET_NAME_MAX_LENGTH = 40;
   const COPY_FEEDBACK_MS = 1500;
+  const MODEL_DEFAULT = ''; // an empty seat model means "let the agent decide"
+  const CIRCLE_SHAPES = [
+    { tag: 'circle', attrs: { cx: '6', cy: '6', r: '4.6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3' } },
+  ];
+  const TRASH_SHAPES = [
+    { tag: 'path', attrs: { d: 'M2.5 3.5h7M4.5 3.5v-1a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M3.5 3.5l.4 6a.8.8 0 0 0 .8.75h2.6a.8.8 0 0 0 .8-.75l.4-6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round' } },
+  ];
+  const EDIT_SHAPES = [
+    { tag: 'path', attrs: { d: 'M3 8.5V11h2.5L11 5.5 8.5 3 3 8.5z', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linejoin': 'round' } },
+  ];
 
   function error_text(error) {
     if (error && typeof error.message === 'string') return error.message;
@@ -201,6 +211,15 @@
       // Git worktree option: the checkbox exists only for a git repo workspace, and is off by default.
       is_repo: false,
       use_worktree: false,
+      // Model selection per seat (parallel to lineup; MODEL_DEFAULT = agent default) and third-party APIs.
+      models: [],
+      providers: [],
+      providers_failed: false,
+      providers_error: '',
+      managing_apis: false,
+      api_draft_open: false,
+      api_draft: null, // { editing_id|null, name, kind, base_url, api_key, models_text }
+      api_saving: false,
       // Agent whose install command was just copied ("Copied" feedback for COPY_FEEDBACK_MS).
       copied_agent_id: null,
       copy_timer: 0,
@@ -302,6 +321,7 @@
       ...[
         build_preset_section(state),
         build_agent_section(state),
+        build_api_section(state),
         build_count_section(state),
         build_worktree_section(state),
         build_seat_section(state),
@@ -563,6 +583,7 @@
     }
     const skipped = preset.seats.length - preset.seats.filter((agent_id) => is_installed(state, agent_id)).length;
     state.lineup = usable;
+    sync_models(state);
     state.selected_preset_id = preset.id;
     if (skipped > 0) {
       set_message(state, `Skipped ${skipped} seat(s) with agents that are not installed.`, 'notice');
@@ -652,13 +673,365 @@
     return row;
   }
 
-  // Choosing an agent sets every seat to it.
+  // Choosing an agent sets every seat to it. Agent-model choices are reset (they named the old agent);
+  // third-party endpoint choices remain valid because they only set env vars.
   function choose_agent(state, agent_id) {
     if (state.closed || state.loading || !is_installed(state, agent_id)) return;
     state.lineup = state.lineup.map(() => agent_id);
+    state.models = state.models.map((selection) => (selection && selection.startsWith('p:') ? selection : MODEL_DEFAULT));
     state.selected_preset_id = null;
     set_message(state, '', '');
     render(state);
+  }
+
+  // ---- model & third-party APIs ----
+
+  // Keeps the per-seat model list the same length as the lineup.
+  function sync_models(state) {
+    const next = [];
+    for (let index = 0; index < state.lineup.length; index += 1) {
+      next.push(typeof state.models[index] === 'string' ? state.models[index] : MODEL_DEFAULT);
+    }
+    state.models = next;
+  }
+
+  // Seat model value encoding: '' (agent default), 'm:<model>' (agent's own models) or 'p:<id>:<model>'.
+  function model_options_for(state, agent_id, selection) {
+    const agent = find_catalog_agent(agent_id);
+    const select = make_element('select', {
+      class_name: 'launch_seat_model',
+      attrs: { 'aria-label': 'Model or API', 'data-focus-key': `model:${agent_id}` },
+      on: { change: (event) => set_seat_model(state, agent_id, event.target.value) },
+    });
+    const default_option = make_element('option', { text: 'Default model', attrs: { value: MODEL_DEFAULT } });
+    select.appendChild(default_option);
+    if (agent && Array.isArray(agent.models)) {
+      if (agent.models.length > 0) {
+        const group = make_element('optgroup', { attrs: { label: `${agent.label} models` } });
+        for (const model of agent.models) {
+          group.appendChild(make_element('option', { text: model, attrs: { value: `m:${model}` } }));
+        }
+        select.appendChild(group);
+      }
+    }
+    for (const provider of state.providers) {
+      const group = make_element('optgroup', { attrs: { label: provider.name } });
+      for (const model of provider.models) {
+        group.appendChild(
+          make_element('option', { text: model, attrs: { value: `p:${provider.id}:${model}` } })
+        );
+      }
+      select.appendChild(group);
+    }
+    select.value = typeof selection === 'string' ? selection : MODEL_DEFAULT;
+    if (select.selectedIndex === -1) select.value = MODEL_DEFAULT;
+    return select;
+  }
+
+  function set_seat_model(state, agent_id, selection) {
+    if (state.loading) return;
+    // A model belongs to the seat's agent: only apply it to seats that run that agent.
+    state.models = state.lineup.map((lineup_agent_id, index) => {
+      if (lineup_agent_id !== agent_id) return state.models[index];
+      return typeof selection === 'string' ? selection : MODEL_DEFAULT;
+    });
+    set_message(state, '', '');
+    render(state);
+  }
+
+  // Builds the env vars one seat launches with, from its model/API choice and the stored providers.
+  // Claude speaks ANTHROPIC_*; other agents get an <AGENT>_MODEL hint. Third-party endpoints use the
+  // provider's kind: anthropic -> ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN, openai -> OPENAI_*.
+  function model_env_for_seat(state, agent_id, selection) {
+    const env = {};
+    const value = typeof selection === 'string' ? selection : MODEL_DEFAULT;
+    if (value === MODEL_DEFAULT) return env;
+    const agent = find_catalog_agent(agent_id);
+    if (value.startsWith('m:')) {
+      const model = value.slice(2);
+      if (!agent || !Array.isArray(agent.models) || !agent.models.includes(model)) return env;
+      const key = agent_id === CLAUDE_AGENT_ID ? 'ANTHROPIC_MODEL' : `${agent_id.toUpperCase()}_MODEL`;
+      env[key] = model;
+      return env;
+    }
+    if (!value.startsWith('p:')) return env;
+    const rest = value.slice(2);
+    const separator = rest.indexOf(':');
+    if (separator <= 0) return env;
+    const provider = state.providers.find((item) => item.id === rest.slice(0, separator));
+    if (!provider) return env;
+    const model = rest.slice(separator + 1);
+    if (provider.kind === 'anthropic') {
+      env.ANTHROPIC_BASE_URL = provider.base_url;
+      if (provider.api_key) env.ANTHROPIC_AUTH_TOKEN = provider.api_key;
+      if (model && model !== MODEL_DEFAULT) env.ANTHROPIC_MODEL = model;
+    } else {
+      env.OPENAI_BASE_URL = provider.base_url;
+      if (provider.api_key) env.OPENAI_API_KEY = provider.api_key;
+      if (model && model !== MODEL_DEFAULT) env.OPENAI_MODEL = model;
+    }
+    return env;
+  }
+
+  // The section: header row with a manage toggle, then the stored APIs, then the add/edit form.
+  function build_api_section(state) {
+    const section = make_element('section', { class_name: 'launch_section' });
+    const head = make_element('div', { class_name: 'launch_api_head' });
+    head.appendChild(make_element('h3', { class_name: 'launch_section_title', text: 'Model & API' }));
+    const manage = make_element('button', {
+      class_name: state.managing_apis ? 'launch_api_toggle selected' : 'launch_api_toggle',
+      text: state.managing_apis ? 'Done' : 'Manage APIs',
+      attrs: { type: 'button', 'data-action': 'toggle_apis' },
+      on: { click: () => toggle_manage_apis(state) },
+    });
+    head.appendChild(manage);
+    section.appendChild(head);
+    if (state.providers_failed && state.providers.length === 0) {
+      section.appendChild(make_element('p', { class_name: 'launch_loading', text: 'Third-party APIs could not load; only agent models are listed.' }));
+      return section;
+    }
+    if (state.managing_apis) {
+      section.appendChild(build_api_manager(state));
+    } else {
+      section.appendChild(
+        make_element('p', {
+          class_name: 'launch_api_note',
+          text: state.providers.length === 0
+            ? 'Pick a model per seat below, or add an OpenAI/Anthropic-compatible endpoint with "Manage APIs".'
+            : `${state.providers.length} third-party endpoint(s) are listed in the model menus of each seat. Use "Manage APIs" to change them.`,
+        })
+      );
+    }
+    return section;
+  }
+
+  function build_api_manager(state) {
+    const wrap = make_element('div', { class_name: 'launch_api_manager' });
+    if (state.providers.length > 0) {
+      const list = make_element('div', { class_name: 'launch_api_list' });
+      for (const provider of state.providers) {
+        list.appendChild(build_api_row(state, provider));
+      }
+      wrap.appendChild(list);
+    } else {
+      wrap.appendChild(make_element('p', { class_name: 'launch_api_note', text: 'No endpoints stored yet.' }));
+    }
+    if (state.api_draft_open) {
+      wrap.appendChild(build_api_form(state));
+    } else {
+      const add = make_element('button', {
+        class_name: 'launch_api_add',
+        text: '+ Add endpoint',
+        attrs: { type: 'button', 'data-action': 'add_api' },
+        on: { click: () => open_api_form(state, null) },
+      });
+      wrap.appendChild(add);
+    }
+    return wrap;
+  }
+
+  function build_api_row(state, provider) {
+    const row = make_element('div', { class_name: 'launch_api_row', attrs: { 'data-provider-id': provider.id } });
+    const name = make_element('span', { class_name: 'launch_api_name', text: provider.name });
+    name.title = provider.name;
+    const kind = make_element('span', { class_name: 'launch_api_kind', text: provider.kind });
+    const url = make_element('span', { class_name: 'launch_api_url', text: provider.base_url || '(no base URL)' });
+    url.title = provider.base_url || '';
+    const count = make_element('span', {
+      class_name: 'launch_api_models',
+      text: `${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`,
+    });
+    const edit = make_element('button', {
+      class_name: 'launch_api_edit',
+      attrs: { type: 'button', 'aria-label': `Edit ${provider.name}` },
+      on: { click: () => open_api_form(state, provider.id) },
+    });
+    edit.appendChild(make_svg('launch_api_icon', '0 0 12 12', EDIT_SHAPES));
+    const remove_button = make_element('button', {
+      class_name: 'launch_api_remove',
+      attrs: { type: 'button', 'aria-label': `Remove ${provider.name}` },
+      on: { click: () => remove_api(state, provider.id) },
+    });
+    remove_button.appendChild(make_svg('launch_api_icon', '0 0 12 12', TRASH_SHAPES));
+    const left = make_element('span', { class_name: 'launch_api_left' });
+    left.append(name, kind, url, count);
+    row.append(left, edit, remove_button);
+    return row;
+  }
+
+  function build_api_form(state) {
+    const draft = state.api_draft || { editing_id: null, name: '', kind: 'openai', base_url: '', api_key: '', models_text: '' };
+    const form = make_element('div', { class_name: 'launch_api_form' });
+    const name_input = make_element('input', {
+      class_name: 'launch_api_input',
+      attrs: {
+        type: 'text', placeholder: 'Name (e.g. SigOpenRouter)', maxlength: '60',
+        'aria-label': 'Endpoint name', 'data-focus-key': 'api_name',
+      },
+      on: { input: (event) => { state.api_draft.name = event.target.value; } },
+    });
+    name_input.value = draft.name;
+    const kind_select = make_element('select', {
+      class_name: 'launch_api_kind_select',
+      attrs: { 'aria-label': 'Endpoint protocol' },
+      on: { change: (event) => { state.api_draft.kind = event.target.value; } },
+    });
+    for (const kind of ['openai', 'anthropic']) {
+      const option = make_element('option', { text: kind === 'openai' ? 'OpenAI-compatible' : 'Anthropic-compatible', attrs: { value: kind } });
+      kind_select.appendChild(option);
+    }
+    kind_select.value = draft.kind === 'anthropic' ? 'anthropic' : 'openai';
+    const url_input = make_element('input', {
+      class_name: 'launch_api_input',
+      attrs: {
+        type: 'text', placeholder: 'Base URL (e.g. https://openrouter.ai/api/v1)',
+        'aria-label': 'Base URL', 'data-focus-key': 'api_url',
+      },
+      on: { input: (event) => { state.api_draft.base_url = event.target.value; } },
+    });
+    url_input.value = draft.base_url;
+    const key_input = make_element('input', {
+      class_name: 'launch_api_input',
+      attrs: {
+        type: 'password', placeholder: 'API key (stored on this machine only)',
+        'aria-label': 'API key', 'data-focus-key': 'api_key_input', autocomplete: 'off',
+      },
+      on: { input: (event) => { state.api_draft.api_key = event.target.value; } },
+    });
+    key_input.value = draft.api_key;
+    const models_input = make_element('input', {
+      class_name: 'launch_api_input',
+      attrs: {
+        type: 'text', placeholder: 'Models, comma separated (e.g. gpt-4o, deepseek-v3)',
+        'aria-label': 'Models served by the endpoint', 'data-focus-key': 'api_models_input',
+      },
+      on: { input: (event) => { state.api_draft.models_text = event.target.value; } },
+    });
+    models_input.value = draft.models_text;
+    const save_button = make_element('button', {
+      class_name: 'launch_api_save',
+      text: state.api_saving ? 'Saving…' : 'Save endpoint',
+      attrs: { type: 'button', 'data-action': 'save_api' },
+      on: { click: () => save_api(state) },
+    });
+    save_button.disabled = state.api_saving;
+    const cancel_button = make_element('button', {
+      class_name: 'launch_api_form_cancel',
+      text: 'Cancel',
+      attrs: { type: 'button', 'data-focus-key': 'api_form_cancel' },
+      on: { click: () => close_api_form(state) },
+    });
+    const note = make_element('p', {
+      class_name: 'launch_api_form_note',
+      text: 'The env vars ANTHROPIC_*/OPENAI_* below are set inside the session, nothing is sent anywhere else.',
+    });
+    form.append(name_input, kind_select, url_input, key_input, models_input, note);
+    const actions = make_element('div', { class_name: 'launch_api_actions' });
+    actions.append(save_button, cancel_button);
+    form.appendChild(actions);
+    return form;
+  }
+
+  async function refresh_providers(state) {
+    try {
+      const providers = await window.hub.providers.list();
+      if (state.closed) return;
+      state.providers = Array.isArray(providers) ? providers : [];
+      state.providers_failed = false;
+      state.providers_error = '';
+    } catch (error) {
+      if (state.closed) return;
+      state.providers_failed = true;
+      state.providers_error = error_text(error);
+    }
+  }
+
+  function toggle_manage_apis(state) {
+    if (state.closed) return;
+    state.managing_apis = !state.managing_apis;
+    state.api_draft_open = false;
+    state.api_draft = null;
+    set_message(state, '', '');
+    render(state);
+  }
+
+  function open_api_form(state, editing_id) {
+    if (state.closed) return;
+    const existing = editing_id ? state.providers.find((provider) => provider.id === editing_id) : null;
+    state.api_draft_open = true;
+    state.api_draft = existing
+      ? { editing_id: existing.id, name: existing.name, kind: existing.kind, base_url: existing.base_url, api_key: existing.api_key, models_text: existing.models.join(', ') }
+      : { editing_id: null, name: '', kind: 'openai', base_url: '', api_key: '', models_text: '' };
+    render(state);
+    focus_by_key(state, 'api_name');
+  }
+
+  function close_api_form(state) {
+    if (state.closed) return;
+    state.api_draft_open = false;
+    state.api_draft = null;
+    render(state);
+  }
+
+  async function save_api(state) {
+    if (state.closed || state.api_saving) return;
+    const draft = state.api_draft || {};
+    const models = String(draft.models_text || '')
+      .split(',')
+      .map((model) => model.trim())
+      .filter((model) => model !== '');
+    const payload = {
+      id: draft.editing_id || null,
+      name: String(draft.name || '').trim(),
+      kind: draft.kind === 'anthropic' ? 'anthropic' : 'openai',
+      base_url: String(draft.base_url || '').trim(),
+      api_key: String(draft.api_key || '').trim(),
+      models,
+    };
+    if (!payload.name) {
+      set_message(state, 'Give the endpoint a name first.', 'error');
+      render(state);
+      return;
+    }
+    if (!/^https?:\/\/.+/i.test(payload.base_url)) {
+      set_message(state, 'The base URL must start with http:// or https://.', 'error');
+      render(state);
+      return;
+    }
+    state.api_saving = true;
+    render_footer(state);
+    try {
+      await window.hub.providers.save(payload);
+      if (state.closed) return;
+      await refresh_providers(state);
+      if (state.closed) return;
+      state.api_draft_open = false;
+      state.api_draft = null;
+      set_message(state, '', '');
+      render(state);
+    } catch (error) {
+      if (state.closed) return;
+      set_message(state, `Could not save endpoint: ${error_text(error)}`, 'error');
+      render(state);
+    } finally {
+      state.api_saving = false;
+    }
+  }
+
+  async function remove_api(state, provider_id) {
+    if (state.closed) return;
+    try {
+      await window.hub.providers.remove(provider_id);
+      if (state.closed) return;
+      await refresh_providers(state);
+      if (state.closed) return;
+      set_message(state, '', '');
+      render(state);
+    } catch (error) {
+      if (state.closed) return;
+      set_message(state, `Could not remove endpoint: ${error_text(error)}`, 'error');
+      render(state);
+    }
   }
 
   // Install hands the install command to on_launch as a single seat. The caller then destroys the page.
@@ -782,7 +1155,7 @@
     return section;
   }
 
-  // Growing copies the last seat; shrinking removes from the end.
+  // Growing copies the last seat (and its model choice); shrinking removes from the end.
   function set_count(state, count) {
     if (state.closed || state.loading) return;
     const next = state.lineup.slice(0, count);
@@ -790,6 +1163,11 @@
       next.push(next[next.length - 1] || TERMINAL_AGENT_ID);
     }
     state.lineup = next;
+    const next_models = state.models.slice(0, count);
+    while (next_models.length < count) {
+      next_models.push(next_models[next_models.length - 1] || MODEL_DEFAULT);
+    }
+    state.models = next_models;
     state.selected_preset_id = null;
     set_message(state, '', '');
     render(state);
@@ -812,16 +1190,18 @@
     const row = make_element('li', { class_name: 'launch_seat_row', attrs: { 'data-seat-index': String(index) } });
     row.appendChild(make_element('span', { class_name: 'launch_seat_index', text: String(index + 1) }));
     row.appendChild(build_mark(agent, 'seat'));
-    const select = make_element('select', {
+    sync_models(state);
+    const agent_select = make_element('select', {
       class_name: 'launch_seat_select',
       attrs: { 'aria-label': `Seat ${index + 1} agent`, 'data-focus-key': `seat:${index}` },
       on: { change: (event) => set_seat(state, index, event.target.value) },
     });
     for (const option_agent of installed_agents(state)) {
-      select.appendChild(make_element('option', { text: option_agent.label, attrs: { value: option_agent.id } }));
+      agent_select.appendChild(make_element('option', { text: option_agent.label, attrs: { value: option_agent.id } }));
     }
-    select.value = agent_id;
-    row.appendChild(select);
+    agent_select.value = agent_id;
+    row.appendChild(agent_select);
+    row.appendChild(model_options_for(state, agent_id, state.models[index]));
     return row;
   }
 
@@ -831,6 +1211,9 @@
     next[index] = agent_id;
     state.lineup = next;
     state.selected_preset_id = null;
+    // The model choice may not fit the new agent: keep provider choices with all seats, reset agent models.
+    const previous_selection = String(state.models[index] || MODEL_DEFAULT);
+    state.models[index] = previous_selection.startsWith('p:') ? previous_selection : MODEL_DEFAULT;
     set_message(state, '', '');
     render(state);
   }
@@ -849,13 +1232,16 @@
   // Fires on_launch once. A second click (or a click after launch) does nothing.
   function launch_lineup(state) {
     if (state.closed || state.loading || state.launched) return;
+    sync_models(state);
     const seats = [];
-    for (const agent_id of state.lineup) {
+    state.lineup.forEach((agent_id, index) => {
       const agent = find_catalog_agent(agent_id);
-      if (agent && is_installed(state, agent_id)) {
-        seats.push({ agent_id: agent.id, label: agent.label, command: agent.command });
-      }
-    }
+      if (!agent || !is_installed(state, agent_id)) return;
+      const env = model_env_for_seat(state, agent_id, state.models[index]);
+      const seat = { agent_id: agent.id, label: agent.label, command: agent.command };
+      if (Object.keys(env).length > 0) seat.env = env;
+      seats.push(seat);
+    });
     if (seats.length === 0) {
       set_message(state, 'Choose an installed agent first.', 'error');
       render(state);
@@ -892,11 +1278,16 @@
     state.is_repo = is_repo;
     state.loading = false;
     state.lineup = [default_agent_id(state)];
+    state.models = [MODEL_DEFAULT];
     if (availability_result.failed) {
       set_message(state, 'Could not check installed agents. Only Terminal is available.', 'error');
     } else if (presets_result.failed) {
       set_message(state, `Could not load presets: ${presets_result.error_message}`, 'error');
     }
+    render(state);
+    await refresh_providers(state);
+    if (state.closed) return;
+    if (state.providers_failed) set_message(state, `Could not load APIs: ${state.providers_error}`, 'error');
     render(state);
   }
 
