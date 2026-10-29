@@ -109,7 +109,6 @@
   background: var(--danger_fill);
 }
 
-/* Views: one per workspace, only the active one is displayed */
 .tg-views {
   position: relative;
   flex: 1 1 auto;
@@ -117,26 +116,48 @@
   min-width: 0;
 }
 
+/* View layout: [file panel | pane area]. The panel is a fixed-width side column; the pane area fills
+   the rest and positions every pane absolutely (free layout, see terminal_grid.js). */
 .tg-view {
   position: absolute;
   inset: 0;
   display: none;
-  overflow-x: hidden;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tg-view.tg-view-active {
+  display: flex;
+}
+
+.tg-view .fp-side {
+  display: none;
+  flex: 0 0 250px;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+.tg-view.tg-with-files .fp-side {
   display: block;
 }
 
+.tg-pane-area {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
 .tg-grid {
-  display: grid;
+  position: relative;
   box-sizing: border-box;
   width: 100%;
   height: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   padding: 8px;
-  gap: 8px;
 }
 
 .tg-hint,
@@ -160,8 +181,9 @@
   font-size: 13px;
 }
 
-/* Pane: title bar + xterm */
+/* Pane: title bar + xterm, positioned absolutely inside the pane area */
 .tg-pane {
+  position: absolute;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -177,6 +199,14 @@
   border-color: var(--accent_line);
 }
 
+.tg-pane.tg-dragging,
+.tg-pane.tg-resizing {
+  opacity: 0.85;
+  border-color: var(--accent_line);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* Title bar: also the drag handle */
 .tg-pane-titlebar {
   flex: 0 0 auto;
   display: flex;
@@ -186,6 +216,43 @@
   padding: 0 4px 0 9px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+}
+
+.tg-pane.tg-dragging .tg-pane-titlebar {
+  cursor: grabbing;
+}
+
+/* Resize handles on the edges (invisible, but grabbable) */
+.tg-handle {
+  position: absolute;
+  touch-action: none;
+  z-index: 5;
+}
+
+.tg-handle-e {
+  top: 26px;
+  right: -3px;
+  width: 7px;
+  height: calc(100% - 26px);
+  cursor: ew-resize;
+}
+
+.tg-handle-s {
+  left: 0;
+  bottom: -3px;
+  width: calc(100% - 10px);
+  height: 7px;
+  cursor: ns-resize;
+}
+
+.tg-handle-se {
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
 }
 
 .tg-dot {
@@ -281,4 +348,54 @@
 .tg-pane-body .xterm-viewport {
   scrollbar-width: thin;
   scrollbar-color: var(--scroll_thumb) transparent;
+}
+
+/* Toolbar "Files" toggle in its selected (panel shown) state */
+.tg-btn-selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* File viewer pane (read-only preformatted text) */
+.tg-file-pane .tg-pane-titlebar {
+  cursor: grab;
+}
+
+.tf-dot {
+  background: var(--accent);
+}
+
+.tf-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  box-sizing: border-box;
+  background: var(--bg);
+}
+
+.tf-meta {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  color: var(--muted);
+  font-size: 10.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tf-text {
+  padding: 8px 10px;
+  white-space: pre;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  cursor: text;
+  user-select: text;
+}
+
+.tf-text.tf-error {
+  color: var(--danger_text);
+  white-space: normal;
 }

@@ -26,6 +26,8 @@ const { register_workspace_ipc } = require('./src/main/ipc_workspaces');
 const { register_agent_ipc } = require('./src/main/ipc_agents');
 const { register_clipboard_ipc } = require('./src/main/ipc_clipboard');
 const { register_session_ipc } = require('./src/main/ipc_sessions');
+const { register_providers_ipc } = require('./src/main/ipc_providers');
+const { register_file_ipc } = require('./src/main/ipc_files');
 const { get_hook_server } = require('./src/main/hook_server');
 
 const WINDOW_WIDTH = 1400;
@@ -156,6 +158,8 @@ if (!got_lock) {
     register_clipboard_ipc();
     register_terminal_ipc();
     register_session_ipc();
+    register_providers_ipc();
+    register_file_ipc();
     // Claude Code hooks post to this server. Without it the app still works; claude panes just get no status.
     try {
       await get_hook_server().start();

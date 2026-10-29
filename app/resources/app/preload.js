@@ -2,6 +2,15 @@
 // Native access happens only here, through ipcRenderer, never from the page.
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Dragged files carry a DOM File object that only the preload side can resolve to an OS path.
+// Electron >= 32 needs webUtils.getPathForFile; older builds keep a plain .path property.
+let webUtils = null;
+try {
+  webUtils = require('electron').webUtils || null;
+} catch (error) {
+  webUtils = null;
+}
+
 // Subscribes to an ipc event channel and returns an unsubscribe function.
 function subscribe_channel(channel, callback) {
   const listener = (_event, ...args) => callback(...args);
@@ -47,5 +56,23 @@ contextBridge.exposeInMainWorld('hub', {
   clipboard: {
     read_text: () => ipcRenderer.invoke('clipboard:read_text'),
     write_text: (text) => ipcRenderer.invoke('clipboard:write_text', text),
+  },
+  providers: {
+    list: () => ipcRenderer.invoke('providers:list'),
+    save: (provider) => ipcRenderer.invoke('providers:save', provider),
+    remove: (provider_id) => ipcRenderer.invoke('providers:remove', provider_id),
+  },
+  files: {
+    list: (root_path, rel) => ipcRenderer.invoke('files:list', root_path, rel),
+    read: (root_path, rel) => ipcRenderer.invoke('files:read', root_path, rel),
+    copy_in: (root_path, sources) => ipcRenderer.invoke('files:copy_in', root_path, sources),
+    path_for_file: (file) => {
+      try {
+        if (webUtils && typeof webUtils.getPathForFile === 'function') return webUtils.getPathForFile(file) || '';
+      } catch (error) {
+        return '';
+      }
+      return typeof file === 'object' && file ? file.path || '' : '';
+    },
   },
 });
