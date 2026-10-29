@@ -1,0 +1,91 @@
+/* Design tokens. Every stylesheet and the xterm theme (terminal_grid.js) read these; no hard-coded greys elsewhere. */
+:root {
+  color-scheme: dark;
+
+  --bg: #000000;
+  --sidebar_bg: #050505;
+  --sidebar_width: 170px;
+  --panel: #0b0b0c;
+  --panel_raised: #121214;
+  --border: #1d1d20;
+  --border_strong: #2b2b30;
+  --text: #ececec;
+  --muted: #7f7f88;
+
+  --accent: #5b8def;
+  --accent_fill: rgba(91, 141, 239, 0.1);
+  --accent_line: rgba(91, 141, 239, 0.6);
+
+  --running: #3fb950;
+  --exited: #5c5c63;
+
+  --danger: #e5484d;
+  --danger_text: #ff9a9d;
+  --danger_fill: rgba(229, 72, 77, 0.14);
+  --danger_line: rgba(229, 72, 77, 0.45);
+
+  --warning: #d9a441;
+  --install_fill: #2f5fd0;
+  --scroll_thumb: #26262b;
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll_thumb) transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 12.5px;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  height: 100%;
+}
+
+#sidebar {
+  width: var(--sidebar_width);
+  flex: 0 0 var(--sidebar_width);
+  background: var(--sidebar_bg);
+  border-right: 1px solid var(--border);
+}
+
+#main_area {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+
+#terminal_grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+
+/* Inline launch page: fills the main area; the page itself scrolls inside. Hidden = display none (UA rule). */
+#launch_host:not([hidden]) {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#launch_host > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}

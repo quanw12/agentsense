@@ -1,0 +1,10 @@
+# AgentSense Electron runtime (nep trong zip phan phoi, khong dua vao repo)
+app/*
+!app/resources
+app/resources/*
+!app/resources/app
+# Dependencies tai runtime: chay "npm install" de tao lai
+app/resources/app/node_modules/
+*.zip
+*.tmp
+Thumbs.db

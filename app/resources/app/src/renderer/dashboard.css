@@ -1,0 +1,253 @@
+/* Dashboard overlay (dashboard.js). It covers the main area, right of the sidebar. True black like the launch page;
+   colours come from the tokens in styles.css. Dots reuse the .session_dot states from sidebar.css. */
+
+.dashboard_overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--sidebar_width);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 12.5px;
+}
+
+.dashboard_overlay:focus {
+  outline: none;
+}
+
+/* Same 44px header strip as the launch page: title at the left, close X at the far right. */
+.dashboard_header {
+  flex: 0 0 auto;
+  height: 44px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard_header_inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 100%;
+  padding: 0 12px 0 16px;
+}
+
+.dashboard_title_wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dashboard_title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.dashboard_title_count {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.dashboard_close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.dashboard_close svg {
+  display: block;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.dashboard_close:hover {
+  background: var(--panel_raised);
+}
+
+.dashboard_close:hover svg {
+  opacity: 1;
+}
+
+.dashboard_close:focus-visible,
+.dashboard_close_idle:focus-visible,
+.dashboard_row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Scrolls as a whole; the centred column is 760px at most, with a 16px gutter on narrow windows. */
+.dashboard_body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.dashboard_column {
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 18px 0 24px;
+}
+
+.dashboard_summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.dashboard_counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dashboard_count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.dashboard_count strong {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two-step button: the first click arms it ("Confirm: close N"), the second closes; it disarms after 4 s. */
+.dashboard_close_idle {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border_strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dashboard_close_idle:hover:not(:disabled) {
+  background: var(--panel_raised);
+}
+
+.dashboard_close_idle:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.dashboard_close_idle.confirming {
+  border-color: var(--danger_line);
+  background: var(--danger_fill);
+  color: var(--danger_text);
+}
+
+.dashboard_list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dashboard_row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+  user-select: none;
+}
+
+.dashboard_row:hover {
+  background: var(--panel_raised);
+  border-color: var(--border_strong);
+}
+
+.dashboard_logo {
+  flex: 0 0 auto;
+  display: block;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.dashboard_name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.dashboard_workspace {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.dashboard_status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 118px;
+  color: var(--text);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dashboard_dot {
+  width: 8px;
+  height: 8px;
+}
+
+.dashboard_empty {
+  margin: 28px 0 0;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .dashboard_workspace {
+    display: none;
+  }
+}

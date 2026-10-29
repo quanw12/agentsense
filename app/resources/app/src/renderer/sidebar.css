@@ -1,0 +1,435 @@
+/* Workspace sidebar: workspace tree with session rows underneath. Colours come from the tokens in styles.css.
+   The sidebar is 170px wide (--sidebar_width). The + and x buttons of a row are hidden until the row is hovered or
+   a button is keyboard-focused; they float over the right edge, so the name keeps the room it has at rest. */
+
+#sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar_root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.sidebar_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.sidebar_title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sidebar_header_actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.add_button,
+.dashboard_button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dashboard_button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard_button svg {
+  display: block;
+  pointer-events: none;
+}
+
+.add_button:hover,
+.dashboard_button:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* The dashboard button shows its state while the overlay is open. */
+.dashboard_button[aria-expanded="true"] {
+  background: var(--panel_raised);
+  color: var(--text);
+}
+
+.dashboard_button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.add_button:focus-visible,
+.dashboard_button:focus-visible,
+.workspace_row:focus-visible,
+.session_row:focus-visible,
+.chevron_button:focus-visible,
+.new_session_button:focus-visible,
+.remove_button:focus-visible,
+.session_close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.workspace_list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.workspace_item {
+  list-style: none;
+}
+
+.workspace_item + .workspace_item {
+  margin-top: 2px;
+}
+
+/* Rows have no outline: the selected one is a plain filled row. */
+.workspace_row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 4px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  color: var(--text);
+  user-select: none;
+}
+
+.workspace_row:hover {
+  background: var(--panel);
+}
+
+.workspace_row.selected {
+  background: var(--panel_raised);
+}
+
+/* While the row's buttons show, the right padding makes room for them so the badge is not covered. */
+.workspace_row:hover,
+.workspace_row:has(:focus-visible) {
+  padding-right: 52px;
+}
+
+.chevron_button {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Right-pointing triangle when collapsed, down-pointing when expanded. */
+.chevron {
+  display: block;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 3px 0 3px 4px;
+  border-color: transparent transparent transparent var(--muted);
+}
+
+.chevron.expanded {
+  border-width: 4px 3px 0 3px;
+  border-color: var(--muted) transparent transparent transparent;
+}
+
+.workspace_name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.workspace_row.selected .workspace_name {
+  font-weight: 600;
+}
+
+.count_badge {
+  flex: 0 0 auto;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent_fill);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.count_badge[hidden] {
+  display: none;
+}
+
+/* The + and x of a workspace row float over the right edge. Visible on hover or keyboard focus only. */
+.row_actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: inherit;
+}
+
+.session_actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  background: inherit;
+}
+
+.new_session_button,
+.remove_button,
+.session_close {
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.new_session_button,
+.remove_button {
+  width: 20px;
+  height: 20px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.new_session_button {
+  font-size: 15px;
+  line-height: 19px;
+}
+
+.workspace_row:hover .new_session_button,
+.workspace_row:hover .remove_button,
+.new_session_button:focus-visible,
+.remove_button:focus-visible {
+  opacity: 1;
+}
+
+.new_session_button:hover {
+  background: var(--border_strong);
+  color: var(--text);
+}
+
+.remove_button:hover {
+  background: var(--danger_fill);
+  color: var(--danger);
+}
+
+/* Session tree under an expanded workspace: a subtle guide line at the chevron's centre. */
+.session_list {
+  position: relative;
+  list-style: none;
+  margin: 2px 0 4px 14px;
+  padding: 0 0 0 12px;
+}
+
+.session_list::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 6px;
+  left: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.session_item {
+  list-style: none;
+}
+
+.session_item + .session_item {
+  margin-top: 1px;
+}
+
+.session_row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  min-width: 0;
+  padding: 0 4px 0 7px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--text);
+  font-size: 11.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.session_row:hover,
+.session_row:has(:focus-visible) {
+  padding-right: 24px;
+}
+
+.session_row:hover {
+  background: var(--panel);
+}
+
+.session_row.selected {
+  background: var(--panel_raised);
+}
+
+/* Status dot. Panes without a hub status keep the running (green) / exited (grey) dot; Claude panes show the hub state.
+   working pulses blue, waiting amber, done green, idle grey, ended is hollow grey. */
+.session_dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--exited);
+}
+
+.session_dot.running,
+.session_dot.done {
+  background: var(--running);
+}
+
+.session_dot.working {
+  background: var(--accent);
+  animation: session_pulse 1.6s ease-out infinite;
+}
+
+.session_dot.waiting {
+  background: var(--warning);
+}
+
+.session_dot.idle,
+.session_dot.exited {
+  background: var(--exited);
+}
+
+.session_dot.ended {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--exited);
+}
+
+@keyframes session_pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--accent_line);
+  }
+  70% {
+    box-shadow: 0 0 0 4px rgba(91, 141, 239, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(91, 141, 239, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session_dot.working {
+    animation: none;
+  }
+}
+
+/* Agent logo, 14px, centred by the row's flex alignment; fixed size so the row never shifts. */
+.session_logo {
+  flex: 0 0 auto;
+  display: block;
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.session_name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.session_agent {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.session_close {
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.session_close:hover {
+  background: var(--danger_fill);
+  color: var(--danger);
+}
+
+.session_row:hover .session_close,
+.session_row.selected:hover .session_close,
+.session_close:focus-visible {
+  opacity: 1;
+}
+
+.sidebar_empty {
+  margin: 12px 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sidebar_empty[hidden] {
+  display: none;
+}

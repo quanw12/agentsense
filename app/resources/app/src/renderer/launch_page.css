@@ -1,0 +1,835 @@
+/* Launch page ("New session"), rendered inline in the main area. Colours come from the tokens in styles.css. */
+
+/* Three rows: the header (44px), the body (grows, and is the only part that scrolls) and the footer (44px,
+   always at the bottom). The body holds the centred 600px column. */
+.launch_page {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 12.5px;
+}
+
+.launch_page *,
+.launch_page *::before,
+.launch_page *::after {
+  box-sizing: border-box;
+}
+
+/* Body: full width, so its scrollbar sits at the window edge. It is the only scrolling part of the page. */
+.launch_body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The centred column: 600px max, 16px gutter on narrow windows. */
+.launch_column {
+  width: min(600px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 20px 0 24px;
+}
+
+/* Header spans the full page width: title at the left, close X at the far right. */
+.launch_header {
+  flex: 0 0 auto;
+  height: 44px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.launch_header_inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 100%;
+  padding: 0 12px 0 16px;
+}
+
+.launch_title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.launch_title_icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.launch_title_name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.launch_title_rest {
+  flex: 0 0 auto;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Close X: a 28px outlined button at the far right of the header strip. */
+.launch_close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* The glyph is drawn at 75% and goes to full strength on hover. */
+.launch_close_icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.launch_close:hover {
+  opacity: 1;
+  background: var(--panel_raised);
+}
+
+.launch_close:hover .launch_close_icon {
+  opacity: 1;
+}
+
+/* Sections are separated by space only, about 22px apart. */
+.launch_section {
+  padding: 0 0 22px;
+}
+
+.launch_section_title {
+  margin: 0 0 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.launch_loading {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* Logos. Each mark is a fixed box so rows stay aligned whether it holds an image or a letter badge. */
+
+.launch_mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.launch_mark_agent {
+  width: 18px;
+  height: 18px;
+}
+
+.launch_mark_seat {
+  width: 16px;
+  height: 16px;
+}
+
+.launch_mark_small {
+  width: 14px;
+  height: 14px;
+}
+
+.launch_logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Letter badge, used only when an agent has no logo. */
+.launch_agent_glyph {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 2px;
+  border: 1px solid var(--border_strong);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* Presets */
+
+.launch_preset_grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.launch_preset_wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.launch_preset_card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.launch_preset_card:hover:not(:disabled) {
+  border-color: var(--border_strong);
+}
+
+.launch_preset_card.selected {
+  background: var(--accent_fill);
+  border-color: var(--accent_line);
+}
+
+.launch_preset_head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  height: 15px;
+}
+
+.launch_preset_name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The seat count is muted; it gives way to the delete x on hover. */
+.launch_preset_count {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.launch_preset_wrap:hover .launch_preset_count {
+  opacity: 0;
+}
+
+.launch_preset_meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.launch_preset_logos {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.launch_preset_summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.launch_preset_note {
+  color: var(--warning);
+  font-size: 10px;
+}
+
+.launch_preset_delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.launch_preset_wrap:hover .launch_preset_delete,
+.launch_preset_delete:focus-visible {
+  opacity: 1;
+}
+
+.launch_preset_delete:hover {
+  background: var(--danger_fill);
+  color: var(--danger);
+}
+
+.launch_preset_new {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border_strong);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.launch_preset_new:hover:not(:disabled) {
+  border-color: var(--accent_line);
+}
+
+.launch_preset_new_title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.launch_preset_new_hint {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.launch_preset_form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  grid-column: 1 / -1;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.launch_preset_input {
+  flex: 1 1 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+/* Agents */
+
+.launch_agent_grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.launch_agent_button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 24px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.launch_agent_button:hover:not(:disabled) {
+  border-color: var(--border_strong);
+}
+
+.launch_agent_button.selected {
+  background: var(--accent_fill);
+  border-color: var(--accent);
+}
+
+/* Small accent dot at the right edge marks the chosen agent. */
+.launch_agent_button.selected::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Not installed: the whole button is dimmed to 55%, so the label stays readable. */
+.launch_agent_button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.launch_agent_label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launch_missing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.launch_missing_title {
+  margin-right: 4px;
+}
+
+.launch_install_button,
+.launch_missing_chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+}
+
+/* Install: a small filled blue button with a download arrow. */
+.launch_install_button {
+  border: none;
+  background: var(--install_fill);
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.launch_install_button:hover {
+  filter: brightness(1.12);
+}
+
+.launch_install_icon {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+}
+
+/* Agents without an install command: an outlined, muted chip. */
+.launch_missing_chip {
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.launch_missing_chip .launch_mark {
+  opacity: 0.5;
+}
+
+/* How many */
+
+.launch_count_row {
+  display: flex;
+  gap: 6px;
+}
+
+.launch_count_button {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.launch_count_button:hover:not(:disabled) {
+  border-color: var(--border_strong);
+}
+
+.launch_count_button.selected {
+  border-color: var(--accent);
+  background: var(--accent_fill);
+}
+
+.launch_count_button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Will launch */
+
+.launch_seat_list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.launch_seat_row {
+  display: grid;
+  grid-template-columns: 18px 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+}
+
+.launch_seat_index {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.launch_seat_select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+/* Message: inside the body, right under WILL LAUNCH. */
+
+.launch_message {
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.launch_message[hidden] {
+  display: none;
+}
+
+.launch_message.is_error {
+  color: var(--danger_text);
+}
+
+.launch_message.is_notice {
+  color: var(--muted);
+}
+
+/* The seat list ends the section, so the message sits 10px under it. */
+.launch_section:has(> .launch_seat_list) {
+  padding-bottom: 0;
+}
+
+/* Footer: a full-width bar pinned to the bottom of the page (outside the scrolling body). 44px tall including
+   its 1px top border. The summary is at the far left (16px in); Cancel and Launch are at the far right, 12px in,
+   the same inset as the close X in the header. The buttons are 28px tall, 8px above the bottom edge. */
+.launch_footer {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  height: 44px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* The 1px bottom padding offsets the centring by one pixel, so the 28px buttons sit 8px above the bottom edge. */
+.launch_footer_inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 100%;
+  padding: 0 12px 1px 16px;
+}
+
+.launch_summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.launch_footer_actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.launch_footer .launch_cancel,
+.launch_footer .launch_primary {
+  height: 28px;
+}
+
+.launch_cancel,
+.launch_preset_save,
+.launch_preset_form_cancel {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--border_strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Primary: accent fill, white text, play triangle before the label. */
+.launch_primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.launch_primary_icon {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 10px;
+}
+
+.launch_primary:disabled,
+.launch_preset_save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.launch_cancel:hover,
+.launch_preset_form_cancel:hover,
+.launch_preset_save:hover:not(:disabled) {
+  background: var(--panel);
+}
+
+.launch_primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.launch_close:focus-visible,
+.launch_preset_card:focus-visible,
+.launch_preset_new:focus-visible,
+.launch_preset_delete:focus-visible,
+.launch_preset_input:focus-visible,
+.launch_preset_save:focus-visible,
+.launch_preset_form_cancel:focus-visible,
+.launch_agent_button:focus-visible,
+.launch_install_button:focus-visible,
+.launch_count_button:focus-visible,
+.launch_seat_select:focus-visible,
+.launch_cancel:focus-visible,
+.launch_primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Git worktree option: a plain checkbox row in the "Git" section (only shown for a git repo workspace). */
+
+.launch_worktree {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.launch_worktree_check {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.launch_worktree_note {
+  margin: 6px 0 0 22px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Install hints: one row per agent that is not installed and has an install command. */
+
+.launch_install_hints {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.launch_install_hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.launch_install_hint_label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.launch_install_command {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.launch_copy_button {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border_strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.launch_copy_button:hover {
+  background: var(--panel);
+}
+
+.launch_copy_button.copied {
+  border-color: var(--running);
+  color: var(--running);
+}
+
+.launch_install_hint .launch_copy_button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Grid notice (terminal_grid.js): a kept worktree is announced here for a few seconds. Lives in this file
+   because it is the one stylesheet the grid page owns besides terminal_grid.css. */
+
+.tg-notice {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border_strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.tg-notice[hidden] {
+  display: none;
+}
+
+.tg-notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tg-notice-close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tg-notice-close:hover {
+  background: var(--panel_raised);
+  color: var(--text);
+}

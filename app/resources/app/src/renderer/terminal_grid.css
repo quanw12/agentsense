@@ -1,0 +1,284 @@
+/* Terminal grid styles. Colours come from the tokens in styles.css; the xterm theme lives in terminal_grid.js. */
+
+.tg-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 12.5px;
+}
+
+.tg-root [hidden] {
+  display: none !important;
+}
+
+/* Toolbar */
+.tg-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.tg-btn {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border_strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tg-btn:hover:not(:disabled) {
+  background: var(--panel);
+}
+
+.tg-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The toolbar's "+ New session": a small outlined button in the accent colour. */
+.tg-btn-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tg-btn-primary:hover:not(:disabled) {
+  background: var(--accent_fill);
+}
+
+.tg-note {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Error banner */
+.tg-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--danger_line);
+  border-radius: 6px;
+  background: var(--danger_fill);
+  color: var(--danger_text);
+  font-size: 12px;
+}
+
+.tg-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tg-banner-close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--danger_text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tg-banner-close:hover {
+  background: var(--danger_fill);
+}
+
+/* Views: one per workspace, only the active one is displayed */
+.tg-views {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.tg-view {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.tg-view.tg-view-active {
+  display: block;
+}
+
+.tg-grid {
+  display: grid;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 8px;
+  gap: 8px;
+}
+
+.tg-hint,
+.tg-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.tg-hint {
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.tg-empty {
+  font-size: 13px;
+}
+
+/* Pane: title bar + xterm */
+.tg-pane {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tg-pane.tg-active {
+  border-color: var(--accent_line);
+}
+
+.tg-pane-titlebar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 4px 0 9px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.tg-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--exited);
+}
+
+.tg-dot.tg-dot-running {
+  background: var(--running);
+}
+
+/* Agent logo, 16px, before the pane name; fixed size so the title bar never shifts. */
+.tg-pane-logo {
+  flex: 0 0 auto;
+  display: block;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.tg-pane-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tg-pane-agent {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tg-restart {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tg-restart:hover {
+  background: var(--accent_fill);
+}
+
+.tg-close {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tg-close:hover {
+  background: var(--border_strong);
+  color: var(--text);
+}
+
+.tg-pane-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tg-pane-body .xterm {
+  padding: 5px 6px;
+}
+
+/* Thin dark scrollbar instead of the default light one xterm's viewport shows */
+.tg-pane-body .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll_thumb) transparent;
+}
