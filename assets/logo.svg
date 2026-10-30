@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="AgentSense">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#131a26"/>
+      <stop offset="1" stop-color="#0a0d13"/>
+    </linearGradient>
+    <linearGradient id="active" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b8def" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#5b8def" stop-opacity="0.12"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <rect x="17.5" y="17.5" width="477" height="477" rx="110.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3"/>
+
+  <!-- Pane grid: 2 x 3, one pane lit -->
+  <g>
+    <!-- inactive panes -->
+    <rect x="264" y="132" width="112" height="72" rx="14" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+    <rect x="136" y="220" width="112" height="72" rx="14" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+    <rect x="264" y="220" width="112" height="72" rx="14" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+    <rect x="136" y="308" width="112" height="72" rx="14" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+    <rect x="264" y="308" width="112" height="72" rx="14" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+
+    <!-- active pane -->
+    <rect x="136" y="132" width="112" height="72" rx="14" fill="url(#active)" stroke="#5b8def" stroke-width="3"/>
+    <path d="M 170 152 L 190 168 L 170 184" fill="none" stroke="#5b8def" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="204" y="178" width="30" height="9" rx="4.5" fill="#5b8def">
+      <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.45;0.5;0.9;1" dur="1.4s" repeatCount="indefinite"/>
+    </rect>
+
+    <!-- second agent: finished (green dot) -->
+    <circle cx="352" cy="156" r="7" fill="#3fb950"/>
+  </g>
+</svg>

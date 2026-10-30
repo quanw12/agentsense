@@ -18,7 +18,8 @@
     "start": "electron .",
     "dev": "AGENT_HUB_DEVTOOLS=1 electron .",
     "dist": "electron-builder --win --dir",
-    "build:app": "node scripts/build_app.mjs"
+    "build:app": "node scripts/build_app.mjs",
+    "icons": "node scripts/gen_icons.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -26,6 +27,7 @@
     "node-pty": "^1.1.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "electron": "44.9.0",
     "electron-builder": "^26.18.0"
   },
@@ -45,7 +47,7 @@
       "build/icon.png"
     ],
     "win": {
-      "icon": "build/icon.png"
+      "icon": "build/icon.ico"
     }
   }
 }
