@@ -1,6 +1,7 @@
-// Terminal grid: one CSS-grid view per workspace, each pane = title bar + xterm.
+﻿// Terminal grid: one view per workspace; sessions are xterm panes with a free (drag & resize) layout.
 // Classic script (no import/export). Exposes window.init_terminal_grid(options).
-// Depends on the globals Terminal (xterm) and FitAddon.FitAddon, and on window.hub (preload.js).
+// Depends on the globals Terminal (xterm) and FitAddon.FitAddon, on window.hub (preload.js) and on
+// file_panel.js (window.init_file_panel) for the workspace file tree beside the sessions.
 (function terminal_grid_module() {
   'use strict';
 
@@ -23,8 +24,17 @@
     'powershell.exe': { agent_id: 'terminal', label: 'Terminal' },
     claude: { agent_id: 'claude', label: 'Claude Code' },
   };
-  const SCROLL_AFTER_PANES = 6;
-  const SCROLL_ROW_MIN_PX = 280;
+  const STATUS_TEXT = { starting: 'starting', running: 'running', exited: 'exited' };
+  const WORKTREE_NOTICE_MS = 8000;
+  const AGENT_INSTALL_ID = 'install';
+
+  // Free pane layout. Rects are fractions {x, y, w, h} of the pane area; panes can be dragged
+  // anywhere and resized from their edges, so the old fixed CSS grid is gone.
+  // MIN_* keep panes usable; a pane is never dragged fully off screen.
+  const MIN_PANE_PX = 140; // smallest width or height for any pane
+  const MIN_PANE_WIDTH = MIN_PANE_PX;
+  const MIN_PANE_HEIGHT = MIN_PANE_PX;
+  const DRAG_VISIBLE_PX = 40; // at least this much of a pane stays inside while dragging
   const TERMINAL_OPTIONS = {
     fontFamily: '"Cascadia Mono", Consolas, monospace',
     fontSize: 13,
@@ -56,9 +66,6 @@
       brightWhite: '#ffffff',
     },
   };
-  const STATUS_TEXT = { starting: 'starting', running: 'running', exited: 'exited' };
-  const WORKTREE_NOTICE_MS = 8000;
-  const AGENT_INSTALL_ID = 'install';
 
   // Module-wide routing. One hub subscription per page routes events by terminal_id.
   const PANE_BY_TERMINAL = new Map(); // terminal_id -> pane (panes of every grid)
@@ -276,6 +283,7 @@
       views: new Map(),
       active_view: null,
       active_pane: null,
+      files_open: true,
       notice_timer: 0,
       dom: null,
     };
@@ -293,7 +301,12 @@
     new_button.setAttribute('data-action', 'new_session');
     new_button.addEventListener('click', () => on_new_session_click(grid));
     const note = create_el('span', 'tg-note', '');
-    toolbar.append(new_button, note);
+    const files_button = create_el('button', 'tg-btn tg-btn-selected', 'Files');
+    files_button.type = 'button';
+    files_button.title = 'Show or hide the workspace files panel';
+    files_button.setAttribute('data-action', 'toggle_files');
+    files_button.addEventListener('click', () => toggle_files_panel(grid));
+    toolbar.append(new_button, files_button, note);
 
     const banner = create_el('div', 'tg-banner');
     const banner_text = create_el('span', 'tg-banner-text', '');
@@ -320,7 +333,7 @@
 
     root.append(toolbar, banner, notice, views);
     grid.container.appendChild(root);
-    return { root, new_button, note, banner, banner_text, notice, notice_text, views, empty };
+    return { root, new_button, files_button, note, banner, banner_text, notice, notice_text, views, empty };
   }
 
   function show_worktree_notice(grid, worktree_path, reason) {
@@ -343,6 +356,7 @@
 
   function set_toolbar_enabled(grid, enabled) {
     grid.dom.new_button.disabled = !enabled;
+    grid.dom.files_button.disabled = !enabled;
   }
 
   function on_new_session_click(grid) {
@@ -363,11 +377,10 @@
     }
     const count = view.panes.length;
     if (count === 0) {
-      grid.dom.note.textContent = 'No terminals';
+      grid.dom.note.textContent = 'No terminals. Click + New session to start one.';
       return;
     }
-    const columns = columns_for_count(count);
-    grid.dom.note.textContent = `${count} terminal${count === 1 ? '' : 's'}, ${columns} column${columns === 1 ? '' : 's'}`;
+    grid.dom.note.textContent = `${count} terminal${count === 1 ? '' : 's'}. Drag to move panes; drag the edges to resize.`;
   }
 
   function show_banner(grid, message) {
@@ -381,14 +394,21 @@
   }
 
   function create_view(grid, workspace) {
-    const root = create_el('div', 'tg-view');
+    // Layout: [file panel | pane area]. The panel shows the workspace tree and accepts drag & drop;
+    // tg-with-files on the root toggles its width on and off.
+    const root = create_el('div', 'tg-view tg-with-files');
+    const file_side = create_el('div', 'fp-side');
+    const pane_area = create_el('div', 'tg-pane-area');
     const pane_grid = create_el('div', 'tg-grid');
     const hint = create_el('div', 'tg-hint', 'Click + New session to start a session');
-    root.append(pane_grid, hint);
+    pane_area.append(pane_grid, hint);
+    root.append(file_side, pane_area);
     grid.dom.views.appendChild(root);
-    return {
+    const view = {
       workspace,
       root,
+      file_side,
+      pane_area,
       pane_grid,
       hint,
       panes: [],
@@ -396,6 +416,27 @@
       ready: false,
       disposed: false,
     };
+    mount_file_panel(grid, view);
+    return view;
+  }
+
+  // Creates file panel.js's tree once per view (when the skill is present; between app versions it may not be).
+  function mount_file_panel(grid, view) {
+    if (!window.init_file_panel || !view.workspace || !view.workspace.id) return;
+    view.file_panel = window.init_file_panel({
+      container: view.file_side,
+      workspace: view.workspace,
+      on_open_file: (rel_path) => open_file_in_grid(grid, view.workspace, rel_path),
+      on_error: (message) => show_banner(grid, String(message || 'File panel error')),
+    });
+  }
+
+  function toggle_files_panel(grid) {
+    grid.files_open = !grid.files_open;
+    grid.dom.files_button.classList.toggle('tg-btn-selected', grid.files_open);
+    for (const view of grid.views.values()) {
+      view.root.classList.toggle('tg-with-files', grid.files_open);
+    }
   }
 
   // Creates the view for a workspace if needed and starts re-attaching its live terminals once.
@@ -450,6 +491,7 @@
     const view = grid.views.get(workspace_id);
     if (view) {
       view.disposed = true;
+      if (view.file_panel && typeof view.file_panel.dispose === 'function') view.file_panel.dispose();
       for (const pane of view.panes.slice()) remove_pane(grid, pane);
       view.root.remove();
       grid.views.delete(workspace_id);
@@ -523,6 +565,17 @@
     const body = create_el('div', 'tg-pane-body');
     element.append(titlebar, body);
 
+    // Free-layout handles: right edge, bottom edge and the bottom-right corner resize the pane;
+    // the titlebar moves it (attach_pane_drag).
+    const resize = {};
+    const resize_e = create_el('div', 'tg-handle tg-handle-e');
+    const resize_s = create_el('div', 'tg-handle tg-handle-s');
+    const resize_se = create_el('div', 'tg-handle tg-handle-se');
+    element.append(resize_e, resize_s, resize_se);
+    resize.e = resize_e;
+    resize.s = resize_s;
+    resize.se = resize_se;
+
     const term = new window.Terminal(Object.assign({}, TERMINAL_OPTIONS));
     const fit = new window.FitAddon.FitAddon();
     term.loadAddon(fit);
@@ -541,6 +594,10 @@
       base_cwd: spec.base_cwd || spec.cwd,
       worktree: spec.worktree || null,
       element,
+      titlebar,
+      resize,
+      rect: null, // filled by place_pane; null = uniform tiling slot for the current count
+      dirty_layout: false, // true once the user moved or resized this pane by hand
       dot,
       restart_btn,
       body,
@@ -576,6 +633,15 @@
       close_pane(grid, pane);
     });
     element.addEventListener('mousedown', () => set_active_pane(grid, pane), true);
+    element.addEventListener('mousedown', () => {
+      // Focused panes float above the ones behind them.
+      pane_serial += 1;
+      element.style.zIndex = String(pane_serial);
+    }, true);
+    attach_pane_drag(pane);
+    attach_pane_resize(pane, 'e');
+    attach_pane_resize(pane, 's');
+    attach_pane_resize(pane, 'se');
 
     pane.observer = new ResizeObserver(() => schedule_refit(pane));
     pane.observer.observe(body);
@@ -660,14 +726,286 @@
     refit_pane(pane);
   }
 
+  // ---- file viewer panes ----
+  // A read-only pane that shows one workspace file. It has no terminal: close removes it, drag/resize
+  // work like terminal panes (same handle logic), and it never counts as a running session.
+  const FILE_READ_LIMIT = 512 * 1024; // must match files:read in the main process
+
+  function format_byte_size(bytes) {
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${bytes} B`;
+  }
+
+  function build_file_pane(grid, view, spec) {
+    const element = create_el('div', 'tg-pane tg-file-pane');
+    const titlebar = create_el('div', 'tg-pane-titlebar');
+    const icon = create_el('span', 'tg-dot tf-dot');
+    icon.title = 'File';
+    const name_el = create_el('span', 'tg-pane-title', spec.name);
+    name_el.title = spec.name;
+    const close_btn = create_el('button', 'tg-close', 'x');
+    close_btn.type = 'button';
+    close_btn.title = 'Close file';
+    titlebar.append(icon, name_el, close_btn);
+    const body = create_el('div', 'tf-body');
+    body.textContent = 'Loading…';
+    const resize = {};
+    const resize_e = create_el('div', 'tg-handle tg-handle-e');
+    const resize_s = create_el('div', 'tg-handle tg-handle-s');
+    const resize_se = create_el('div', 'tg-handle tg-handle-se');
+    element.append(titlebar, body, resize_e, resize_s, resize_se);
+    resize.e = resize_e;
+    resize.s = resize_s;
+    resize.se = resize_se;
+
+    pane_serial += 1;
+    const pane = {
+      pane_id: pane_serial,
+      grid,
+      view,
+      kind: 'file',
+      name: spec.name,
+      path: spec.path,
+      element,
+      titlebar,
+      resize,
+      rect: null,
+      dirty_layout: false,
+      body,
+      close_btn,
+      terminal_id: null,
+      status: 'file',
+      disposed: false,
+      observer: null,
+      refit_frame: 0,
+      term: null,
+      fit: null,
+    };
+    close_btn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      remove_pane(grid, pane);
+      notify_grid(grid);
+    });
+    element.addEventListener('mousedown', () => set_active_pane(grid, pane), true);
+    pane.observer = new ResizeObserver(() => schedule_refit(pane));
+    pane.observer.observe(body);
+    return pane;
+  }
+
+  function mount_file_pane(grid, view, pane) {
+    view.panes.push(pane);
+    view.pane_grid.appendChild(pane.element);
+    relayout_view(grid, view);
+    load_file_content(pane);
+  }
+
+  async function load_file_content(pane) {
+    const view = pane.view;
+    try {
+      const result = await window.hub.files.read(view.workspace.path, pane.path);
+      if (pane.disposed) return;
+      pane.body.textContent = '';
+      const meta = create_el('div', 'tf-meta');
+      const size = format_byte_size(result.bytes != null ? result.bytes : 0);
+      if (result.kind === 'text') {
+        meta.textContent = `${size}${result.bytes >= FILE_READ_LIMIT ? ' (truncated)' : ''}`;
+        pane.body.append(meta);
+        const text = create_el('div', 'tf-text');
+        text.textContent = String(result.text || '');
+        pane.body.append(text);
+      } else {
+        meta.textContent = `${result.ext || 'This file'} — binary (preview skipped, ${size})`;
+        pane.body.append(meta);
+      }
+    } catch (error) {
+      if (pane.disposed) return;
+      pane.body.textContent = '';
+      const text = create_el('div', 'tf-text tf-error', `Could not read file: ${error_text(error)}`);
+      pane.body.append(text);
+    }
+  }
+
+  // Opens the file viewer pane for a workspace-relative path; an existing pane for the same file is focused.
+  function open_file_in_grid(grid, workspace, rel_path) {
+    const view = grid.views.get(workspace.id);
+    if (!view) return;
+    const existing = view.panes.find(
+      (pane) => pane.kind === 'file' && !pane.disposed && pane.path === rel_path
+    );
+    if (existing) {
+      set_active_pane(grid, existing);
+      return;
+    }
+    const pane = build_file_pane(grid, view, { name: rel_path.split(/[\\/]/).pop() || rel_path, path: rel_path });
+    mount_file_pane(grid, view, pane);
+    set_active_pane(grid, pane);
+  }
+
+  // Free pane layout (replaces the old CSS grid). Each pane keeps rect = {x, y, w, h} as fractions of
+  // the pane area. rect === null means "not placed yet": such panes get a slot from the uniform tiling
+  // for the current count (the old behaviour) the next time they are placed.
   function relayout_view(grid, view) {
-    const count = view.panes.length;
-    const scrolling = count > SCROLL_AFTER_PANES;
-    view.pane_grid.style.gridTemplateColumns = `repeat(${columns_for_count(count)}, minmax(0, 1fr))`;
-    view.pane_grid.style.gridAutoRows = scrolling ? `minmax(${SCROLL_ROW_MIN_PX}px, 1fr)` : 'minmax(0, 1fr)';
-    view.pane_grid.style.height = scrolling ? 'auto' : '100%';
-    view.hint.hidden = count > 0;
+    for (const pane of view.panes) place_pane(pane, view);
+    view.hint.hidden = count_panes(view) > 0;
     if (grid.active_view === view) update_note(grid);
+  }
+
+  function count_panes(view) {
+    let counted = 0;
+    for (const pane of view.panes) {
+      if (!pane.disposed) counted += 1;
+    }
+    return counted;
+  }
+
+  function columns_for_count(count) {
+    if (count <= 1) return 1;
+    if (count <= 4) return 2;
+    return 3;
+  }
+
+  // Uniform tiling for `count` panes: same slots as the old CSS grid (1 column / 2 / 3 by count).
+  function rect_for_slot(index, count) {
+    const columns = columns_for_count(count);
+    const rows = Math.ceil(count / columns);
+    return {
+      x: (index % columns) / columns,
+      y: Math.floor(index / columns) / rows,
+      w: 1 / columns,
+      h: 1 / rows,
+    };
+  }
+
+  function place_pane(pane, view) {
+    const area = view.pane_grid;
+    const width = Math.max(area.clientWidth, 1);
+    const height = Math.max(area.clientHeight, 1);
+    if (!pane.rect) {
+      const index = view.panes.indexOf(pane);
+      pane.rect = rect_for_slot(index, view.panes.length);
+      // Keep the minimum size even in tiny windows.
+      pane.rect.w = Math.max(pane.rect.w, Math.min(1, MIN_PANE_PX / width));
+      pane.rect.h = Math.max(pane.rect.h, Math.min(1, MIN_PANE_PX / height));
+    }
+    const element = pane.element;
+    element.style.left = `${pane.rect.x * 100}%`;
+    element.style.top = `${pane.rect.y * 100}%`;
+    element.style.width = `${pane.rect.w * 100}%`;
+    element.style.height = `${pane.rect.h * 100}%`;
+    element.style.zIndex = String(pane.pane_id % 100000);
+  }
+
+  // Clamp helpers: a pane stays inside the pane area and never smaller than MIN_PANE_PX.
+  function clamp_rect(rect, area_width, area_height) {
+    const min_w = Math.min(1, MIN_PANE_PX / Math.max(area_width, 1));
+    const min_h = Math.min(1, MIN_PANE_PX / Math.max(area_height, 1));
+    const w = Math.min(Math.max(rect.w, min_w), 1);
+    const h = Math.min(Math.max(rect.h, min_h), 1);
+    const max_x = Math.max(0, 1 - w);
+    const max_y = Math.max(0, 1 - h);
+    const x = Math.min(Math.max(rect.x, 0), max_x);
+    const y = Math.min(Math.max(rect.y, 0), max_y);
+    return { x, y, w, h };
+  }
+
+  function clamp_drag_rect(rect, area_width, area_height) {
+    // While dragging, the pane head must stay grabbable: keep part of it inside the area.
+    const keep_w = Math.min(rect.w, Math.min(1, DRAG_VISIBLE_PX / Math.max(area_width, 1)));
+    const keep_h = Math.min(rect.h, Math.min(1, DRAG_VISIBLE_PX / Math.max(area_height, 1)));
+    const min_x = -(rect.w - keep_w);
+    const min_y = -(rect.h - keep_h);
+    const x = Math.min(Math.max(rect.x, min_x), 1 - keep_w);
+    const y = Math.min(Math.max(rect.y, min_y), 1 - keep_h);
+    return { x, y, w: rect.w, h: rect.h };
+  }
+
+  //Moving a pane: pointer down on the titlebar (not on a button), then follow the pointer.
+  function attach_pane_drag(pane) {
+    const handle = pane.titlebar;
+    let started = false;
+    let start = null;
+    let area_rect = null;
+
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      if (event.target && event.target.closest && event.target.closest('button')) return;
+      started = true;
+      const area = pane.view.pane_grid.getBoundingClientRect();
+      area_rect = area;
+      start = { px: event.clientX, py: event.clientY, rect: Object.assign({}, pane.rect) };
+      pane.element.classList.add('tg-dragging');
+      event.preventDefault();
+    });
+
+    window.addEventListener(
+      'pointermove',
+      (event) => {
+        if (!started) return;
+        const width = Math.max(area_rect.width, MIN_PANE_WIDTH);
+        const height = Math.max(area_rect.height, MIN_PANE_HEIGHT);
+        const dx = (event.clientX - start.px) / width;
+        const dy = (event.clientY - start.py) / height;
+        pane.rect = clamp_drag_rect(
+          { x: start.rect.x + dx, y: start.rect.y + dy, w: start.rect.w, h: start.rect.h },
+          width,
+          height
+        );
+        pane.dirty_layout = true;
+        place_pane(pane, pane.view);
+      },
+      { passive: true }
+    );
+
+    window.addEventListener('pointerup', () => {
+      if (!started) return;
+      started = false;
+      pane.element.classList.remove('tg-dragging');
+    });
+  }
+
+  //Resizing: thin handles on the right edge (e), bottom edge (s) and bottom-right corner (se).
+  function attach_pane_resize(pane, mode) {
+    const handle = pane.resize[mode];
+    let started = false;
+    let start = null;
+    let area_rect = null;
+
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      started = true;
+      area_rect = pane.view.pane_grid.getBoundingClientRect();
+      start = { px: event.clientX, py: event.clientY, rect: Object.assign({}, pane.rect) };
+      pane.element.classList.add('tg-resizing');
+    });
+
+    window.addEventListener(
+      'pointermove',
+      (event) => {
+        if (!started) return;
+        const width = Math.max(area_rect.width, MIN_PANE_WIDTH);
+        const height = Math.max(area_rect.height, MIN_PANE_HEIGHT);
+        const next = Object.assign({}, start.rect);
+        if (mode === 'e' || mode === 'se') {
+          next.w = start.rect.w + (event.clientX - start.px) / width;
+        }
+        if (mode === 's' || mode === 'se') {
+          next.h = start.rect.h + (event.clientY - start.py) / height;
+        }
+        pane.rect = clamp_rect(next, width, height);
+        pane.dirty_layout = true;
+        place_pane(pane, pane.view);
+      },
+      { passive: true }
+    );
+
+    window.addEventListener('pointerup', () => {
+      if (!started) return;
+      started = false;
+      pane.element.classList.remove('tg-resizing');
+    });
   }
 
   function refit_pane(pane) {
@@ -763,8 +1101,8 @@
       PANE_BY_TERMINAL.delete(pane.terminal_id);
     }
     if (pane.refit_frame) window.cancelAnimationFrame(pane.refit_frame);
-    pane.observer.disconnect();
-    pane.term.dispose();
+    if (pane.observer) pane.observer.disconnect();
+    if (pane.term) pane.term.dispose();
     pane.element.remove();
     if (grid.active_pane === pane) grid.active_pane = null;
     relayout_view(grid, view);
@@ -784,12 +1122,22 @@
   function seat_spec(view, seat) {
     const agent_id = clean_part(seat.agent_id) || DEFAULT_AGENT_ID;
     const agent_label = clean_part(seat.label) || agent_id;
+    // seat.env (from the launch page: model and third-party API) becomes env_extra for the pty.
+    const env_extra =
+      seat.env && typeof seat.env === 'object'
+        ? Object.fromEntries(
+            Object.entries(seat.env)
+              .filter(([key, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(key)) && typeof value === 'string')
+              .map(([key, value]) => [String(key), value])
+          )
+        : {};
     return {
       name: next_free_name(view),
       agent_id,
       agent_label,
       command: String((((window.find_agent && window.find_agent(agent_id)) || {}).launch_command) || seat.command || '').trim(),
       cwd: view.workspace.path,
+      env_extra,
     };
   }
 
@@ -818,6 +1166,7 @@
       try {
         const terminal_id = await launch_terminal(pane, {
           use_worktree: want_worktree && spec.agent_id !== AGENT_INSTALL_ID,
+          env_extra: spec.env_extra,
         });
         if (pane.disposed) {
           note_kept_worktree(grid, await kill_quietly(terminal_id));

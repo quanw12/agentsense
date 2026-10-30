@@ -77,6 +77,20 @@ function hooks_dir() {
   return claude_hooks.hooks_dir_for(app.getPath('userData'));
 }
 
+// Per-seat env from the launch page (models, third-party APIs). Only well-formed pairs are kept:
+// NAME characters [A-Za-z_][A-Za-z0-9_]* and a string value; anything else is dropped.
+function env_extra(opts) {
+  const extra = opts && opts.env_extra;
+  if (!extra || typeof extra !== 'object') return {};
+  const result = {};
+  for (const [key, value] of Object.entries(extra)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (typeof value !== 'string' || value.length > 8192) continue;
+    result[key] = value;
+  }
+  return result;
+}
+
 function append_buffer(session, data) {
   session.buffer += data;
   if (session.buffer.length > RING_BUFFER_LIMIT) {
@@ -158,8 +172,9 @@ async function create_terminal(opts) {
       spawn_command = claude_hooks.build_claude_command(hooks_file, resume_session_id);
     }
     const spawn_spec = resolve_spawn(spawn_command);
-    // PATH is read fresh so panes can run agents installed after the app started.
-    const env = env_with_fresh_path(Object.assign({}, process.env, { TERM: 'xterm-256color' }));
+    // PATH is read fresh so panes can run agents installed after the app started. env_extra carries the
+    // per-seat model/API settings chosen on the launch page.
+    const env = env_with_fresh_path(Object.assign({}, process.env, env_extra(options), { TERM: 'xterm-256color' }));
     proc = pty.spawn(spawn_spec.file, spawn_spec.args, {
       name: 'xterm-256color',
       cols,
