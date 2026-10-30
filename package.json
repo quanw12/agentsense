@@ -4,13 +4,46 @@
   "version": "1.0.0",
   "description": "AgentSense: Windows 11 Electron app to run and manage CLI coding agents side by side",
   "main": "main.js",
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "electron",
+    "claude-code",
+    "codex",
+    "terminal",
+    "coding-agents"
+  ],
+  "author": "Anh Quân (quanw12)",
+  "license": "MIT",
   "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "AGENT_HUB_DEVTOOLS=1 electron .",
+    "dist": "electron-builder --win --dir",
+    "build:app": "node scripts/build_app.mjs"
+  },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "electron": "44.9.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.agentsense.app",
+    "productName": "AgentSense",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "build/icon.png"
+    ],
+    "win": {
+      "icon": "build/icon.png"
+    }
   }
 }
