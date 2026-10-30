@@ -1,10 +1,13 @@
-# AgentSense Electron runtime (nep trong zip phan phoi, khong dua vao repo)
-app/*
-!app/resources
-app/resources/*
-!app/resources/app
-# Dependencies tai runtime: chay "npm install" de tao lai
-app/resources/app/node_modules/
+# Dependencies: recreate with "npm install"
+node_modules/
+
+# Build output: recreate with "npm run dist" + "npm run build:app"
+dist/
+# app/ is the packaged Electron payload the installer zip ships
+# (Install AgentSense.cmd copies it to %LOCALAPPDATA%\Programs\AgentSense).
+# Regenerate it from source any time: npm run dist && npm run build:app
+app/
+
 *.zip
 *.tmp
 Thumbs.db
