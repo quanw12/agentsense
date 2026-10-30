@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 220" width="920" height="220" role="img" aria-label="AgentSense">
+  <defs>
+    <linearGradient id="wbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#131a26"/>
+      <stop offset="1" stop-color="#0a0d13"/>
+    </linearGradient>
+    <linearGradient id="wactive" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b8def" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#5b8def" stop-opacity="0.12"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon tile -->
+  <rect x="10" y="10" width="200" height="200" rx="48" fill="url(#wbg)"/>
+  <rect x="11.5" y="11.5" width="197" height="197" rx="46.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+  <rect x="88" y="38" width="44" height="30" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
+  <rect x="140" y="38" width="44" height="30" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
+  <rect x="88" y="76" width="44" height="30" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
+  <rect x="140" y="76" width="44" height="30" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
+  <rect x="88" y="114" width="44" height="30" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
+  <rect x="140" y="114" width="44" height="30" rx="6" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
+  <rect x="36" y="38" width="44" height="30" rx="6" fill="url(#wactive)" stroke="#5b8def" stroke-width="2"/>
+  <path d="M 50 46 L 58 53 L 50 60" fill="none" stroke="#5b8def" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="64" y="57.5" width="12" height="3.5" rx="1.75" fill="#5b8def">
+    <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.45;0.5;0.9;1" dur="1.4s" repeatCount="indefinite"/>
+  </rect>
+  <circle cx="172" cy="47" r="3.5" fill="#3fb950"/>
+
+  <!-- Wordmark -->
+  <text x="248" y="118" font-family="'Segoe UI', system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="#e6edf3" letter-spacing="-1">Agent</text>
+  <text x="452" y="118" font-family="'Segoe UI', system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="#5b8def" letter-spacing="-1">Sense</text>
+  <text x="250" y="164" font-family="'Segoe UI', system-ui, -apple-system, sans-serif" font-size="24" font-weight="400" fill="#8b949e">Run and manage CLI coding agents side by side</text>
+</svg>
