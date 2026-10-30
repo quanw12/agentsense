@@ -1,50 +1,32 @@
-// Renders assets/logo.svg into the app icons:
-//   build/icon.png  512x512 (electron-builder, window icon)
-//   build/icon.ico  multi-size (Windows taskbar/explorer, referenced by electron-builder)
-// The .ico embeds standard PNG entries (Vista+ format), so no external ico tool is needed.
+// Packs the app icons from the brand source images:
+//   assets/icon.png      (512, brand mark — the app and README logo)
+//   assets/icon-256.png  (256, for the Windows .ico entry)
+// Outputs:
+//   build/icon.png  copy of the 512 brand mark (electron-builder, window icon)
+//   build/icon.ico  single 256 PNG entry (Windows taskbar/explorer; Vista+ scales it down)
+// Resize assets/icon.png to 256 (any image editor) when the brand mark changes.
 // Usage: npm run icons
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { Resvg } from '@resvg/resvg-js';
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 
-const svg = readFileSync(new URL('../assets/logo.svg', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../assets/icon-256.png', import.meta.url));
 
-function render(size) {
-  const resvg = new Resvg(svg, {
-    fitTo: { mode: 'width', value: size },
-    background: 'rgba(0,0,0,0)',
-  });
-  return resvg.render().asPng();
-}
-
-const sizes = [16, 24, 32, 48, 64, 128, 256];
-const pngs = new Map(sizes.map((s) => [s, render(s)]));
-
-mkdirSync(new URL('../build', import.meta.url), { recursive: true });
-writeFileSync(new URL('../build/icon.png', import.meta.url), render(512));
-
-// ICO: 6-byte header, one 16-byte directory entry per size, then the PNG blobs.
-const entries = sizes.map((s) => ({ size: s, png: pngs.get(s) }));
+// ICO: 6-byte header, one 16-byte directory entry, then the 256px PNG blob.
 const header = Buffer.alloc(6);
 header.writeUInt16LE(0, 0); // reserved
 header.writeUInt16LE(1, 2); // type: icon
-header.writeUInt16LE(entries.length, 4);
+header.writeUInt16LE(1, 4); // one entry
 
-const dir = Buffer.alloc(entries.length * 16);
-let offset = header.length + dir.length;
-entries.forEach((entry, i) => {
-  const base = i * 16;
-  dir.writeUInt8(entry.size === 256 ? 0 : entry.size, base + 0); // width (0 = 256)
-  dir.writeUInt8(entry.size === 256 ? 0 : entry.size, base + 1); // height
-  dir.writeUInt8(0, base + 2); // palette colors
-  dir.writeUInt8(0, base + 3); // reserved
-  dir.writeUInt16LE(1, base + 4); // color planes
-  dir.writeUInt16LE(32, base + 6); // bits per pixel
-  dir.writeUInt32LE(entry.png.length, base + 8); // data size
-  dir.writeUInt32LE(offset, base + 12); // data offset
-  offset += entry.png.length;
-});
+const dir = Buffer.alloc(16);
+dir.writeUInt8(0, 0); // width (0 = 256)
+dir.writeUInt8(0, 1); // height (0 = 256)
+dir.writeUInt8(0, 2); // palette colors
+dir.writeUInt8(0, 3); // reserved
+dir.writeUInt16LE(1, 4); // color planes
+dir.writeUInt16LE(32, 6); // bits per pixel
+dir.writeUInt32LE(source.length, 8); // data size
+dir.writeUInt32LE(22, 12); // data offset (6 + 16)
 
-const ico = Buffer.concat([header, dir, ...entries.map((e) => e.png)]);
-writeFileSync(new URL('../build/icon.ico', import.meta.url), ico);
+writeFileSync(new URL('../build/icon.ico', import.meta.url), Buffer.concat([header, dir, source]));
+copyFileSync(new URL('../assets/icon.png', import.meta.url), new URL('../build/icon.png', import.meta.url));
 
-console.log(`build/icon.png (512) + build/icon.ico (${sizes.join(', ')}) written.`);
+console.log('build/icon.png (512) + build/icon.ico (256) written from the wolf brand mark.');
