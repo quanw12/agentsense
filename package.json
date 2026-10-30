@@ -32,6 +32,8 @@
   "build": {
     "appId": "com.agentsense.app",
     "productName": "AgentSense",
+    "npmRebuild": false,
+    "asar": false,
     "directories": {
       "output": "dist",
       "buildResources": "build"
