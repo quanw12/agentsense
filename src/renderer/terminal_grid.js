@@ -539,6 +539,105 @@
 
   // spec = { name, agent_id, agent_label, command, cwd, base_cwd?, worktree? }
   // cwd is where the pane runs now; base_cwd is the folder it was asked to use (the repo, when cwd is a worktree).
+  // Dropping files on a pane copies them into the workspace (unless they already live inside it)
+  // and pastes the absolute destinations at the CLI cursor, so the running agent can use them.
+  function attach_drop_to_pane(grid, pane) {
+    const element = pane.element;
+    element.addEventListener('dragover', (event) => {
+      if (!event.dataTransfer) return;
+      if (!Array.from(event.dataTransfer.types || []).includes('Files')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      element.classList.add('tg-drop-target');
+    });
+    element.addEventListener('dragleave', () => {
+      element.classList.remove('tg-drop-target');
+    });
+    element.addEventListener('drop', (event) => {
+      element.classList.remove('tg-drop-target');
+      if (!event.dataTransfer) return;
+      const files_list = Array.from(event.dataTransfer.files || []);
+      if (files_list.length === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void drop_files_into_pane(grid, pane, files_list);
+    });
+  }
+
+  async function drop_files_into_pane(grid, pane, files_list) {
+    if (pane.status !== 'running' || !pane.terminal_id) {
+      show_banner(grid, 'The session is not running yet — wait for it to start, then drop again.');
+      return;
+    }
+    const workspace = pane.view ? pane.view.workspace : null;
+    if (!workspace || !workspace.path) {
+      show_banner(grid, 'No workspace folder for this pane — drop files onto the Files panel instead.');
+      return;
+    }
+    const root_abs = String(workspace.path);
+    const resolved = [];
+    for (const file of files_list) {
+      let source_path = '';
+      try {
+        source_path = String(window.hub.files.path_for_file(file) || file.path || '');
+      } catch {
+        source_path = typeof file.path === 'string' ? file.path : '';
+      }
+      if (source_path) resolved.push(source_path);
+    }
+    if (resolved.length === 0) {
+      show_banner(grid, 'Could not resolve the file paths of that drop.');
+      return;
+    }
+
+    const parts = [];
+    const inside = [];
+    const outside = [];
+    for (const source_path of resolved) {
+      if (path_is_under(root_abs, source_path)) inside.push(source_path);
+      else outside.push(source_path);
+    }
+    // Files that already live in the workspace are only referenced, never copied again.
+    parts.push(...inside.map(quote_path));
+    if (outside.length > 0) {
+      let outcome;
+      try {
+        outcome = await window.hub.files.copy_in(root_abs, outside.map((p) => ({ path: p })));
+      } catch (error) {
+        show_banner(grid, `Could not copy dropped files: ${error_text(error)}`);
+        return;
+      }
+      const results = Array.isArray(outcome.results) ? outcome.results : [];
+      const copied = results.filter((r) => r && r.ok);
+      const failed = results.filter((r) => r && !r.ok);
+      if (copied.length === 0) {
+        show_banner(grid, `Could not copy dropped files — ${failed.map((f) => `${f.name}: ${f.message}`).join('; ')}`);
+        return;
+      }
+      const sep = root_abs.includes('\\') ? '\\' : '/';
+      const base = root_abs.endsWith(sep) ? root_abs : root_abs + sep;
+      parts.push(...copied.map((r) => quote_path(base + r.name)));
+      if (failed.length > 0) {
+        show_banner(grid, `Copied ${copied.length}, failed ${failed.length}: ${failed.map((f) => `${f.name}: ${f.message}`).join('; ')}`);
+      }
+    }
+    if (parts.length > 0 && pane.status === 'running' && pane.terminal_id) {
+      window.hub.terminals.write(pane.terminal_id, parts.join(' '));
+    }
+  }
+
+  // True when p is root itself or lives under it (case-insensitive, Windows-style separators).
+  function path_is_under(root, p) {
+    const norm = (value) => String(value || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+    const r = norm(root);
+    const v = norm(p);
+    return v === r || v.startsWith(r + '\\');
+  }
+
+  function quote_path(p) {
+    return /[\s"]/.test(p) ? `"${p}"` : p;
+  }
+
   function build_pane(grid, view, spec) {
     const element = create_el('div', 'tg-pane');
     element.setAttribute('data-name', spec.name);
@@ -624,6 +723,7 @@
       }
     });
     attach_terminal_input(pane);
+    attach_drop_to_pane(grid, pane);
     restart_btn.addEventListener('click', (event) => {
       event.stopPropagation();
       restart_pane(grid, pane);
