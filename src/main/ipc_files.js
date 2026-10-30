@@ -5,6 +5,7 @@
 // Every relative path is resolved and constrained to root_path, so the page cannot escape the workspace.
 const fs = require('fs');
 const path = require('path');
+const { ipcMain } = require('electron');
 
 const TEXT_MAX_BYTES = 1024 * 512; // the viewer shows at most this much of a file
 const COPY_MAX_NAME = 180;
