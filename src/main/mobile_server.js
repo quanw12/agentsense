@@ -399,14 +399,16 @@ class MobileServer extends EventEmitter {
     if (!ws.attached.has(info.terminal_id) && ws.attached.size >= MAX_ATTACHED) {
       return this.send_to(ws, { type: 'error', message: 'too many attached terminals' });
     }
-    ws.attached.add(info.terminal_id);
-    return this.send_to(ws, {
+    // Buffer first, then live routing: no await in between, so no data chunk can slip in front of the replay.
+    this.send_to(ws, {
       type: 'attached',
       terminal_id: info.terminal_id,
       buffer: info.buffer,
       alive: info.alive,
       exit_code: info.exit_code,
     });
+    ws.attached.add(info.terminal_id);
+    return undefined;
   }
 
   handle_input(ws, msg) {
