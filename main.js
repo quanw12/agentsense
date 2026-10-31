@@ -28,7 +28,9 @@ const { register_clipboard_ipc } = require('./src/main/ipc_clipboard');
 const { register_session_ipc } = require('./src/main/ipc_sessions');
 const { register_providers_ipc } = require('./src/main/ipc_providers');
 const { register_file_ipc } = require('./src/main/ipc_files');
+const { register_mobile_ipc } = require('./src/main/ipc_mobile');
 const { get_hook_server } = require('./src/main/hook_server');
+const { get_mobile_server } = require('./src/main/mobile_server');
 
 const WINDOW_WIDTH = 1400;
 const WINDOW_HEIGHT = 900;
@@ -160,6 +162,8 @@ if (!got_lock) {
     register_session_ipc();
     register_providers_ipc();
     register_file_ipc();
+    // Starts the mobile access server itself when it was left enabled (mobile.json).
+    register_mobile_ipc();
     // Claude Code hooks post to this server. Without it the app still works; claude panes just get no status.
     try {
       await get_hook_server().start();
@@ -174,6 +178,7 @@ if (!got_lock) {
   });
 
   app.on('will-quit', () => {
+    get_mobile_server().stop();
     pty_manager.kill_all();
   });
 

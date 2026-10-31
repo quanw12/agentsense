@@ -20,7 +20,12 @@ function register_terminal_ipc() {
   ipcMain.on('terminals:resize', (_event, terminal_id, cols, rows) => {
     pty_manager.resize_terminal(terminal_id, cols, rows);
   });
-  ipcMain.handle('terminals:kill', (_event, terminal_id) => pty_manager.kill_terminal(terminal_id));
+  ipcMain.handle('terminals:kill', async (_event, terminal_id) => {
+    const result = await pty_manager.kill_terminal(terminal_id);
+    // An explicit close emits no pty exit; the phone (and any other window) still needs to know.
+    broadcast('terminals:closed', terminal_id);
+    return result;
+  });
   ipcMain.handle('terminals:list', (_event, workspace_id) => pty_manager.list_terminals(workspace_id));
   ipcMain.handle('terminals:get_status', () => get_hook_server().get_status());
 
@@ -41,4 +46,4 @@ function register_terminal_ipc() {
   });
 }
 
-module.exports = { register_terminal_ipc };
+module.exports = { register_terminal_ipc, broadcast };

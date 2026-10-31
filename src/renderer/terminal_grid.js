@@ -166,6 +166,9 @@
       if (pane) pane.term.write(data);
     });
     window.hub.terminals.on_exit((terminal_id, exit_code) => route_exit(terminal_id, exit_code));
+    // Panes created or closed by the phone (mobile_server.js -> terminals:created / terminals:closed).
+    window.hub.terminals.on_created((info) => route_created(info));
+    window.hub.terminals.on_closed((terminal_id) => route_closed(terminal_id));
   }
 
   function route_exit(terminal_id, exit_code) {
@@ -181,6 +184,65 @@
     pane.term.write(exit_line(exit_code));
     set_pane_status(pane, 'exited', exit_code);
     notify_grid(pane.grid);
+  }
+
+  // Builds a pane for a live terminal info (a list entry or a created broadcast), replays its buffer and
+  // binds the live routing. Shared by the workspace attach and the phone-created route below.
+  function attach_info_to_view(grid, view, info) {
+    const decoded = decode_title(info.title, info.command);
+    const pane = build_pane(grid, view, {
+      name: decoded.name,
+      agent_id: decoded.agent_id,
+      agent_label: decoded.agent_label,
+      command: info.command,
+      cwd: info.cwd,
+    });
+    mount_pane(grid, view, pane);
+    // The buffer is the output so far; live data for this terminal is routed from now on.
+    if (info.buffer) pane.term.write(info.buffer);
+    if (info.alive) {
+      bind_terminal(pane, info.terminal_id, 'running', null);
+    } else {
+      pane.term.write(exit_line(info.exit_code));
+      bind_terminal(pane, info.terminal_id, 'exited', info.exit_code);
+    }
+    return pane;
+  }
+
+  // A pane was created from the phone: show it in its workspace view when that view is on screen,
+  // else remember it like any other externally created terminal (the sidebar picks it up).
+  function route_created(info) {
+    if (!info || typeof info.terminal_id !== 'string' || PANE_BY_TERMINAL.has(info.terminal_id)) return;
+    for (const grid of LIVE_GRIDS) {
+      const view = grid.views.get(info.workspace_id);
+      if (view && view.ready && !view.disposed) {
+        attach_info_to_view(grid, view, info);
+        notify_grid(grid);
+        return;
+      }
+    }
+    const decoded = decode_title(info.title, info.command);
+    EXTERNAL_TERMINALS.set(info.terminal_id, {
+      workspace_id: info.workspace_id,
+      alive: Boolean(info.alive),
+      title: decoded.name,
+      agent_id: decoded.agent_id,
+      agent_label: decoded.agent_label,
+    });
+    notify_all_grids();
+  }
+
+  // A pane was closed from the phone: an explicit close emits no pty exit, so this is its own event.
+  function route_closed(terminal_id) {
+    if (typeof terminal_id !== 'string') return;
+    const pane = PANE_BY_TERMINAL.get(terminal_id);
+    if (pane && !pane.disposed) {
+      pane.term.write('\r\n[session closed from another device]\r\n');
+      set_pane_status(pane, 'exited', null);
+      notify_grid(pane.grid);
+      return;
+    }
+    if (EXTERNAL_TERMINALS.delete(terminal_id)) notify_all_grids();
   }
 
   async function load_external_terminals() {
@@ -515,23 +577,7 @@
     for (const info of infos) EXTERNAL_TERMINALS.delete(info.terminal_id);
     for (const info of infos) {
       if (PANE_BY_TERMINAL.has(info.terminal_id)) continue;
-      const decoded = decode_title(info.title, info.command);
-      const pane = build_pane(grid, view, {
-        name: decoded.name,
-        agent_id: decoded.agent_id,
-        agent_label: decoded.agent_label,
-        command: info.command,
-        cwd: info.cwd,
-      });
-      mount_pane(grid, view, pane);
-      // The buffer is the output so far; live data for this terminal is routed from now on.
-      if (info.buffer) pane.term.write(info.buffer);
-      if (info.alive) {
-        bind_terminal(pane, info.terminal_id, 'running', null);
-      } else {
-        pane.term.write(exit_line(info.exit_code));
-        bind_terminal(pane, info.terminal_id, 'exited', info.exit_code);
-      }
+      attach_info_to_view(grid, view, info);
     }
     view.ready = true;
     notify_grid(grid);
