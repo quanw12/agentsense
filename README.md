@@ -36,6 +36,9 @@ worktree. Everything runs locally, works offline and stays on your machine.
 - **Git worktree isolation** — give a pane its own worktree
   (`<repo>.worktrees/<name>`, branch `agentsense/<name>`); nothing is ever
   force-removed.
+- **Mobile access** — pair your phone with a QR code and drive the same
+  sessions from its browser: watch and type in any pane, start a new agent,
+  close a session. See [Mobile access](#mobile-access).
 - **Claude Code status hooks** — a local, token-protected HTTP server
   (`127.0.0.1`, random port) turns Claude Code hook events into pane status:
   `working → waiting → done`.
@@ -82,15 +85,59 @@ npm run build:app    :: mirror dist/win-unpacked into app/ (the installer payloa
 
 Then double-click `Install AgentSense.cmd` (or run `dist\win-unpacked\AgentSense.exe` directly).
 
+`npm run smoke:mobile` starts the mobile access server inside Electron with a
+temp profile and runs an end-to-end check (auth, attach, input, create, kill).
+
+## Mobile access
+
+AgentSense can serve a touch-friendly web UI from the desktop, so your phone
+becomes a remote control for the sessions running on your PC.
+
+1. Click the **phone icon** in the sidebar header and turn on **Enable mobile
+   access**.
+2. Scan the QR code with your phone (or copy one of the links) — the link
+   contains a random pairing token, stored in `%APPDATA%\AgentSense\mobile.json`.
+3. The phone opens a session list; tap a session to get a full-screen terminal
+   with a quick-keys bar (Esc / Tab / arrows / `^C` / `^D` / Enter). Toggle
+   **Line** to type a whole line per Enter — the most reliable way to type on a
+   phone keyboard, and it doubles as the paste path. **+ New** starts a new
+   agent in any workspace; panes created on the phone appear on the desktop
+   right away, and the other way round.
+4. While mobile access is on you can enable **Keep the PC awake**, so a session
+   does not die when the PC idles.
+
+Where the phone can reach the PC:
+
+- **Same Wi-Fi / LAN** — works out of the box ("Reachable from other devices"
+  on). The first start may ask to allow AgentSense through Windows Firewall —
+  allow it on private networks.
+- **Away from home (street, train, another city)** — install
+  [Tailscale](https://tailscale.com) (free) on **this PC and your phone**, log
+  into the same tailnet, and keep "Reachable from other devices" on. The phone
+  then reaches the PC by its Tailscale address (`100.x.x.x`, listed in the
+  panel) over an encrypted WireGuard tunnel. **Do not port-forward this page
+  to the internet**: the page is plain HTTP and is meant for LAN/VPN use.
+
+Security: every request (page and WebSocket) requires the 32-hex pairing token,
+compared constant-time; three wrong tokens lock new connections out for 30
+seconds. **Rotate pairing token** invalidates the old QR and link (all phones
+must pair again). The phone can only pick workspaces and agents you already
+configured on the desktop — it never sends filesystem paths. Desktop and phone
+can drive the same pane at the same time (last writer wins), like two people
+sharing one keyboard.
+
 ## Project layout
 
 ```
 main.js / preload.js     Electron main process + contextBridge API (window.hub)
-src/main/                pty manager, workspaces, sessions, worktrees, hook server, state store
-src/renderer/            UI: sidebar, launch page, terminal grid, file panel, dashboard (vanilla JS + xterm)
+src/main/                pty manager, workspaces, sessions, worktrees, hook server,
+                         mobile access server, state store
+src/renderer/            UI: sidebar, launch page, terminal grid, file panel, dashboard,
+                         mobile access panel (vanilla JS + xterm)
+src/mobile/              the phone page served by the mobile access server (vanilla JS + xterm)
 assets/                  brand mark (icon.png 512 + icon-256.png for the .ico)
 build/                   app icons (generated: npm run icons)
-scripts/                 build helpers (payload mirror, icon packing)
+scripts/                 build helpers (payload mirror, icon packing) + smoke tests
 app/                     generated Electron payload shipped in the distribution zip
 install.ps1 / uninstall.ps1 + Install/Uninstall .cmd   per-user installer
 ```
@@ -120,6 +167,10 @@ chạy local, dùng được offline và không gửi dữ liệu đi đâu.
 - **Preset** — lưu cách xếp chỗ (vd. "2 Claude + 1 Codex"), lần sau bật lại
   một click.
 - **Git worktree riêng cho từng pane** — codex/claude không giẫm chân nhau.
+- **Truy cập từ điện thoại (Mobile access)** — quét QR để điều khiển các phiên
+  đang chạy từ browser của điện thoại: xem, gõ, mở agent mới, đóng phiên. Ngoài
+  mạng nhà dùng Wi-Fi; ra đường thì cài Tailscale trên PC và điện thoại. Chi
+  tiết ở mục [Mobile access](#mobile-access).
 - **Hook trạng thái Claude Code** — pane hiện `working → waiting → done` qua
   một HTTP server local (127.0.0.1, có token).
 - **Local-first** — dữ liệu nằm ở `%APPDATA%\AgentSense`, không cần tài khoản.
