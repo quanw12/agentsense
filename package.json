@@ -19,7 +19,8 @@
     "dev": "AGENT_HUB_DEVTOOLS=1 electron .",
     "dist": "electron-builder --win --dir",
     "build:app": "node scripts/build_app.mjs",
-    "icons": "node scripts/gen_icons.mjs"
+    "icons": "node scripts/gen_icons.mjs",
+    "smoke:mobile": "electron scripts/smoke_mobile.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
