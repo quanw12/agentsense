@@ -1,0 +1,262 @@
+/* Mobile access overlay (mobile_panel.js). Same skeleton as the dashboard overlay: fixed over the main area,
+   44px header strip, colours from the tokens in styles.css. */
+
+.mobile_overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--sidebar_width);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 12.5px;
+}
+
+.mobile_overlay:focus {
+  outline: none;
+}
+
+.mobile_header {
+  flex: 0 0 auto;
+  height: 44px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mobile_header_inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 100%;
+  padding: 0 12px 0 16px;
+}
+
+.mobile_title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.mobile_close {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.mobile_close:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.mobile_body_wrap {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.mobile_body {
+  max-width: 560px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mobile_enable_row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mobile_running {
+  color: var(--muted);
+}
+
+.mobile_switch_row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Small dark switch built on a plain checkbox. */
+.mobile_switch {
+  appearance: none;
+  width: 30px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin: 0;
+  border-radius: 9px;
+  background: var(--border_strong);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.mobile_switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: left 0.15s ease;
+}
+
+.mobile_switch:checked {
+  background: var(--accent);
+}
+
+.mobile_switch:checked::after {
+  left: 15px;
+}
+
+.mobile_switch:focus-visible {
+  outline: 1px solid var(--accent_line);
+}
+
+.mobile_switch_label {
+  color: var(--text);
+}
+
+.mobile_pair {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.mobile_qr {
+  flex: 0 0 auto;
+  width: 148px;
+  height: 148px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid var(--border_strong);
+}
+
+.mobile_qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mobile_pair_hint {
+  min-width: 0;
+}
+
+.mobile_pair_text {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.mobile_urls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mobile_url_row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.mobile_url_text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mobile_url_label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mobile_url_value {
+  color: var(--text);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile_url_copy {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border_strong);
+  border-radius: 6px;
+  background: var(--panel_raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mobile_url_copy:hover {
+  border-color: var(--accent_line);
+  color: var(--accent);
+}
+
+.mobile_toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.mobile_rotate {
+  align-self: flex-start;
+  padding: 6px 12px;
+  border: 1px solid var(--border_strong);
+  border-radius: 6px;
+  background: var(--panel_raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mobile_rotate:hover {
+  border-color: var(--danger_line);
+  color: var(--danger_text);
+}
+
+.mobile_rotate.confirming {
+  border-color: var(--danger_line);
+  background: var(--danger_fill);
+  color: var(--danger_text);
+}
+
+.mobile_note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}

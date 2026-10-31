@@ -27,6 +27,11 @@
     '<rect x="1" y="7" width="4" height="4" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.2"/>' +
     '<rect x="7" y="7" width="4" height="4" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
 
+  const MOBILE_ICON =
+    '<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">' +
+    '<rect x="3.2" y="0.8" width="5.6" height="10.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/>' +
+    '<path d="M5 9.4 h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>';
+
   function read_saved_id() {
     try {
       return window.localStorage.getItem(SELECTED_KEY);
@@ -126,8 +131,9 @@
     let status_subscribed = false;
     let status_subscription_total = 0;
     let dashboard = null;
+    let mobile_panel = null;
 
-    // Skeleton: header with the dashboard and + buttons, the tree, and the empty-state hint.
+    // Skeleton: header with the dashboard, mobile and + buttons, the tree, and the empty-state hint.
     const root = create_element('div', 'sidebar_root');
     root.id = 'sidebar_root';
     const header = create_element('div', 'sidebar_header');
@@ -140,11 +146,18 @@
     dashboard_button.setAttribute('aria-haspopup', 'dialog');
     dashboard_button.setAttribute('aria-expanded', 'false');
     dashboard_button.innerHTML = DASHBOARD_ICON;
+    const mobile_button = create_element('button', 'dashboard_button');
+    mobile_button.type = 'button';
+    mobile_button.title = 'Mobile access';
+    mobile_button.setAttribute('aria-label', 'Mobile access');
+    mobile_button.setAttribute('aria-haspopup', 'dialog');
+    mobile_button.setAttribute('aria-expanded', 'false');
+    mobile_button.innerHTML = MOBILE_ICON;
     const add_button = create_element('button', 'add_button', '+');
     add_button.type = 'button';
     add_button.title = 'Add a workspace folder';
     add_button.setAttribute('aria-label', 'Add a workspace folder');
-    header_actions.append(dashboard_button, add_button);
+    header_actions.append(dashboard_button, mobile_button, add_button);
     header.append(title, header_actions);
     const list = create_element('ul', 'workspace_list');
     list.setAttribute('role', 'tree');
@@ -569,6 +582,17 @@
 
     dashboard_button.addEventListener('click', () => {
       if (dashboard) dashboard.toggle();
+    });
+    // The mobile access panel lives in its own module; a missing one only disables its button.
+    if (typeof window.init_mobile_panel === 'function') {
+      mobile_panel = window.init_mobile_panel({
+        on_toggle: (is_open) => mobile_button.setAttribute('aria-expanded', String(is_open)),
+      });
+    } else {
+      mobile_button.disabled = true;
+    }
+    mobile_button.addEventListener('click', () => {
+      if (mobile_panel) mobile_panel.toggle();
     });
     add_button.addEventListener('click', () => {
       pick_and_add().catch((error) => window.alert(`Could not add the workspace: ${error.message}`));
