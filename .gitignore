@@ -11,3 +11,6 @@ app/
 *.zip
 *.tmp
 Thumbs.db
+
+# ZCode agent workspace state
+.zcode/
