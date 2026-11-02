@@ -613,6 +613,30 @@
     if (missing_row) section.appendChild(missing_row);
     const install_hints = build_install_hints(state);
     if (install_hints) section.appendChild(install_hints);
+    const custom = make_element('details', { class_name: 'launch_custom' });
+    custom.appendChild(make_element('summary', { text: 'Run another CLI agent' }));
+    const form = make_element('form', { class_name: 'launch_custom_form' });
+    const command = make_element('input', {
+      class_name: 'launch_api_input',
+      attrs: { type: 'text', placeholder: 'Executable or command, e.g. aider', 'aria-label': 'Custom CLI command', maxlength: '2048', required: '' },
+    });
+    const name = make_element('input', {
+      class_name: 'launch_api_input',
+      attrs: { type: 'text', placeholder: 'Display name (optional)', 'aria-label': 'Custom CLI name', maxlength: '60' },
+    });
+    const run = make_element('button', { class_name: 'launch_api_save', text: 'Run CLI', attrs: { type: 'submit' } });
+    form.append(command, name, run);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const value = command.value.trim();
+      if (state.closed || state.launched || !value || /[\r\n\0]/.test(value)) return;
+      state.launched = true;
+      call_callback(state.on_launch, [[{
+        agent_id: 'custom', label: name.value.trim() || value.slice(0, 60), command: value,
+      }], { use_worktree: state.is_repo && state.use_worktree }], 'launch failed');
+    });
+    custom.appendChild(form);
+    section.appendChild(custom);
     return section;
   }
 
@@ -629,7 +653,7 @@
         'data-agent-id': agent.id,
         'data-focus-key': `agent:${agent.id}`,
         'aria-pressed': String(selected),
-        title: installed ? agent.command : `${agent.command} is not installed`,
+        title: `${installed ? agent.command : `${agent.command} is not installed`}${agent.note ? ` · ${agent.note}` : ''}`,
       },
       on: { click: () => choose_agent(state, agent.id) },
     });

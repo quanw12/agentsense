@@ -20,7 +20,8 @@
     "dist": "electron-builder --win --dir",
     "build:app": "node scripts/build_app.mjs",
     "icons": "node scripts/gen_icons.mjs",
-    "smoke:mobile": "electron scripts/smoke_mobile.js"
+    "smoke:mobile": "electron scripts/smoke_mobile.js",
+    "smoke:workbench": "electron scripts/smoke_workbench.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

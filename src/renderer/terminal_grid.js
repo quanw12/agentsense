@@ -36,6 +36,20 @@
   const DROP_EDGE_ZONE = 0.28; // closer than this (fraction of the pane) to an edge = split there
   const RESIZE_DEBOUNCE_MS = 80; // pty resizes wait until a divider drag settles
   const INTERNAL_PATH_TYPE = 'application/x-agentsense-path'; // file tree row drag (file_panel.js)
+  const UI_STORAGE_KEY = 'agentsense.workbench';
+
+  function read_ui() {
+    try { return JSON.parse(localStorage.getItem(UI_STORAGE_KEY)) || {}; }
+    catch { return {}; }
+  }
+
+  function save_ui(grid) {
+    try {
+      localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({
+        files_open: grid.files_open, files_width: grid.files_width, mode: grid.mode,
+      }));
+    } catch { /* The workbench still works when storage is unavailable. */ }
+  }
   const TERMINAL_OPTIONS = {
     fontFamily: '"Cascadia Mono", Consolas, monospace',
     fontSize: 13,
@@ -336,6 +350,7 @@
   }
 
   function build_grid(container, callbacks) {
+    const ui = read_ui();
     const grid = {
       container,
       on_counts_change: callbacks.on_counts_change,
@@ -344,11 +359,32 @@
       views: new Map(),
       active_view: null,
       active_pane: null,
-      files_open: true,
+      files_open: ui.files_open !== false,
+      files_width: Math.min(520, Math.max(180, Number(ui.files_width) || 270)),
+      mode: ui.mode === 'tabs' ? 'tabs' : 'split',
       notice_timer: 0,
       dom: null,
     };
     grid.dom = build_frame(grid);
+    grid.dom.root.style.setProperty('--files-width', `${grid.files_width}px`);
+    grid.dom.files_button.classList.toggle('tg-btn-selected', grid.files_open);
+    grid.dom.files_button.setAttribute('aria-pressed', String(grid.files_open));
+    grid.dom.mode_button.textContent = grid.mode === 'tabs' ? 'Split view' : 'Tab view';
+    grid.dom.root.addEventListener('keydown', (event) => {
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.shiftKey && event.key.toLowerCase() === 'e') {
+        event.preventDefault();
+        event.stopPropagation();
+        toggle_files_panel(grid);
+      } else if (event.key === 'Tab') {
+        const view = grid.active_view;
+        if (!view || !view.panes.length) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const index = view.panes.indexOf(view.selected);
+        select_tab(grid, view.panes[(index + (event.shiftKey ? -1 : 1) + view.panes.length) % view.panes.length]);
+      }
+    }, true);
     LIVE_GRIDS.add(grid);
     return grid;
   }
@@ -364,10 +400,25 @@
     const note = create_el('span', 'tg-note', '');
     const files_button = create_el('button', 'tg-btn tg-btn-selected', 'Files');
     files_button.type = 'button';
-    files_button.title = 'Show or hide the workspace files panel';
+    files_button.title = 'Toggle right files panel (Ctrl+Shift+E)';
+    files_button.setAttribute('aria-label', files_button.title);
     files_button.setAttribute('data-action', 'toggle_files');
     files_button.addEventListener('click', () => toggle_files_panel(grid));
-    toolbar.append(new_button, files_button, note);
+    const mode_button = create_el('button', 'tg-btn', 'Tab view');
+    mode_button.type = 'button';
+    mode_button.dataset.action = 'toggle_mode';
+    mode_button.title = 'Switch between side-by-side splits and a single tab';
+    mode_button.addEventListener('click', () => {
+      grid.mode = grid.mode === 'tabs' ? 'split' : 'tabs';
+      mode_button.textContent = grid.mode === 'tabs' ? 'Split view' : 'Tab view';
+      for (const view of grid.views.values()) {
+        view.zoomed = null;
+        relayout_view(grid, view);
+        refit_view(view);
+      }
+      save_ui(grid);
+    });
+    toolbar.append(new_button, note, mode_button, files_button);
 
     const banner = create_el('div', 'tg-banner');
     const banner_text = create_el('span', 'tg-banner-text', '');
@@ -394,7 +445,7 @@
 
     root.append(toolbar, banner, notice, views);
     grid.container.appendChild(root);
-    return { root, new_button, files_button, note, banner, banner_text, notice, notice_text, views, empty };
+    return { root, new_button, files_button, mode_button, note, banner, banner_text, notice, notice_text, views, empty };
   }
 
   function show_worktree_notice(grid, worktree_path, reason) {
@@ -418,6 +469,7 @@
   function set_toolbar_enabled(grid, enabled) {
     grid.dom.new_button.disabled = !enabled;
     grid.dom.files_button.disabled = !enabled;
+    grid.dom.mode_button.disabled = !enabled;
   }
 
   function on_new_session_click(grid) {
@@ -436,12 +488,14 @@
       grid.dom.note.textContent = '';
       return;
     }
-    const count = view.panes.length;
+    const count = view.panes.filter((pane) => pane.kind !== 'file').length;
     if (count === 0) {
       grid.dom.note.textContent = 'No terminals. Click + New session to start one.';
       return;
     }
-    grid.dom.note.textContent = `${count} pane${count === 1 ? '' : 's'}. Drag a title onto another pane to move it, drag the gaps to resize, double-click a title to maximize.`;
+    const files = view.panes.length - count;
+    grid.dom.note.textContent = `${view.workspace.name} / ${count} agent${count === 1 ? '' : 's'}${files ? ` · ${files} file${files === 1 ? '' : 's'}` : ''}`;
+    grid.dom.note.title = 'Ctrl+Tab to switch tabs · Drag pane headers to rearrange · Double-click to expand';
   }
 
   function show_banner(grid, message) {
@@ -455,15 +509,59 @@
   }
 
   function create_view(grid, workspace) {
-    // Layout: [file panel | pane area]. The panel shows the workspace tree and accepts drag & drop;
+    // Layout: [pane area | file panel]. The panel shows the workspace tree and accepts drag & drop;
     // tg-with-files on the root toggles its width on and off.
-    const root = create_el('div', 'tg-view tg-with-files');
+    const root = create_el('div', grid.files_open ? 'tg-view tg-with-files' : 'tg-view');
     const file_side = create_el('div', 'fp-side');
     const pane_area = create_el('div', 'tg-pane-area');
+    const tabs = create_el('div', 'tg-tabs');
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Agents and open files');
     const pane_grid = create_el('div', 'tg-grid');
     const hint = create_el('div', 'tg-hint', 'Click + New session to start a session');
     pane_area.append(pane_grid, hint);
-    root.append(file_side, pane_area);
+    pane_area.prepend(tabs);
+    const file_resize = create_el('div', 'tg-files-resize');
+    file_resize.setAttribute('role', 'separator');
+    file_resize.setAttribute('aria-label', 'Resize files panel');
+    file_resize.setAttribute('aria-orientation', 'vertical');
+    file_resize.setAttribute('aria-valuemin', '180');
+    file_resize.setAttribute('aria-valuemax', '520');
+    file_resize.setAttribute('aria-valuenow', String(grid.files_width));
+    file_resize.tabIndex = 0;
+    const set_width = (width) => {
+      grid.files_width = Math.round(Math.min(520, Math.max(180, Math.min(width, root.clientWidth - 240))));
+      grid.dom.root.style.setProperty('--files-width', `${grid.files_width}px`);
+      file_resize.setAttribute('aria-valuenow', String(grid.files_width));
+      relayout_view(grid, view);
+      refit_view(view);
+    };
+    file_resize.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      set_width(grid.files_width + (event.key === 'ArrowLeft' ? 20 : -20));
+      save_ui(grid);
+    });
+    file_resize.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      file_resize.setPointerCapture(event.pointerId);
+      const start = event.clientX;
+      const width = grid.files_width;
+      root.classList.add('tg-resizing-row');
+      const move = (e) => set_width(width + start - e.clientX);
+      const end = () => {
+        root.classList.remove('tg-resizing-row');
+        file_resize.removeEventListener('pointermove', move);
+        file_resize.removeEventListener('pointerup', end);
+        file_resize.removeEventListener('pointercancel', end);
+        save_ui(grid);
+      };
+      file_resize.addEventListener('pointermove', move);
+      file_resize.addEventListener('pointerup', end);
+      file_resize.addEventListener('pointercancel', end);
+    });
+    root.append(pane_area, file_resize, file_side);
     grid.dom.views.appendChild(root);
     const view = {
       workspace,
@@ -471,6 +569,8 @@
       file_side,
       pane_area,
       pane_grid,
+      tabs,
+      selected: null,
       hint,
       panes: [],
       layout: null, // split tree, see "tiled layout"
@@ -499,9 +599,13 @@
   function toggle_files_panel(grid) {
     grid.files_open = !grid.files_open;
     grid.dom.files_button.classList.toggle('tg-btn-selected', grid.files_open);
+    grid.dom.files_button.setAttribute('aria-pressed', String(grid.files_open));
     for (const view of grid.views.values()) {
       view.root.classList.toggle('tg-with-files', grid.files_open);
+      relayout_view(grid, view);
+      refit_view(view);
     }
+    save_ui(grid);
   }
 
   // Creates the view for a workspace if needed and starts re-attaching its live terminals once.
@@ -588,10 +692,9 @@
 
   // spec = { name, agent_id, agent_label, command, cwd, base_cwd?, worktree? }
   // cwd is where the pane runs now; base_cwd is the folder it was asked to use (the repo, when cwd is a worktree).
-  // Dropping files on a pane copies them into the workspace (unless they already live inside it)
+  // Dropping files on a pane copies them into its cwd (unless they already live inside it)
   // and pastes the absolute destinations at the CLI cursor, so the running agent can use them.
-  function attach_drop_to_pane(grid, pane) {
-    const element = pane.element;
+  function attach_drop_to_pane(grid, pane, element = pane.element) {
     element.addEventListener('dragover', (event) => {
       if (!event.dataTransfer) return;
       const types = Array.from(event.dataTransfer.types || []);
@@ -610,7 +713,7 @@
       if (rel_path) {
         event.preventDefault();
         event.stopPropagation();
-        paste_workspace_path(grid, pane, rel_path);
+        void paste_workspace_path(grid, pane, rel_path);
         return;
       }
       const files_list = Array.from(event.dataTransfer.files || []);
@@ -621,19 +724,30 @@
     });
   }
 
-  // A row dragged from the Files panel: the file already lives in the workspace, so only its absolute path is pasted.
-  function paste_workspace_path(grid, pane, rel_path) {
+  // Tree/tab drags carry their source workspace; isolated agents stage a copy in their own cwd.
+  async function paste_workspace_path(grid, pane, payload) {
     const workspace = pane.view ? pane.view.workspace : null;
     if (pane.kind === 'file' || !workspace || !workspace.path) return;
     if (pane.status !== 'running' || !pane.terminal_id) {
       show_banner(grid, 'The session is not running yet — wait for it to start, then drop again.');
       return;
     }
-    const root_abs = String(workspace.path);
+    let source_root = workspace.path;
+    let rel_path = payload;
+    try {
+      const source = JSON.parse(payload);
+      source_root = source.root_path;
+      rel_path = source.rel_path;
+    } catch { /* Older file tree drags carried just a relative path. */ }
+    if (typeof source_root !== 'string' || typeof rel_path !== 'string' ||
+        !rel_path || rel_path.split(/[\\/]/).some((part) => part === '..') || /^[\\/]|^[A-Za-z]:/.test(rel_path)) {
+      show_banner(grid, 'Could not resolve the dragged workspace file.');
+      return;
+    }
+    const root_abs = String(source_root);
     const sep = root_abs.includes('\\') ? '\\' : '/';
     const base = root_abs.endsWith(sep) ? root_abs : root_abs + sep;
-    window.hub.terminals.write(pane.terminal_id, `${quote_path(base + String(rel_path).split('/').join(sep))} `);
-    pane.term.focus();
+    await drop_paths_into_pane(grid, pane, [base + rel_path.split('/').join(sep)]);
   }
 
   async function drop_files_into_pane(grid, pane, files_list) {
@@ -641,12 +755,6 @@
       show_banner(grid, 'The session is not running yet — wait for it to start, then drop again.');
       return;
     }
-    const workspace = pane.view ? pane.view.workspace : null;
-    if (!workspace || !workspace.path) {
-      show_banner(grid, 'No workspace folder for this pane — drop files onto the Files panel instead.');
-      return;
-    }
-    const root_abs = String(workspace.path);
     const resolved = [];
     for (const file of files_list) {
       let source_path = '';
@@ -661,6 +769,13 @@
       show_banner(grid, 'Could not resolve the file paths of that drop.');
       return;
     }
+    await drop_paths_into_pane(grid, pane, resolved);
+  }
+
+  async function drop_paths_into_pane(grid, pane, resolved) {
+    if (pane.disposed || pane.status !== 'running' || !pane.terminal_id) return;
+    // The session's actual cwd can be an isolated worktree. Route each drop to that session.
+    const root_abs = String(pane.cwd || pane.view.workspace.path);
 
     const parts = [];
     const inside = [];
@@ -670,7 +785,7 @@
       else outside.push(source_path);
     }
     // Files that already live in the workspace are only referenced, never copied again.
-    parts.push(...inside.map(quote_path));
+    parts.push(...inside.map((p) => quote_path(p, pane.agent_id)));
     if (outside.length > 0) {
       let outcome;
       try {
@@ -688,14 +803,15 @@
       }
       const sep = root_abs.includes('\\') ? '\\' : '/';
       const base = root_abs.endsWith(sep) ? root_abs : root_abs + sep;
-      parts.push(...copied.map((r) => quote_path(base + r.name)));
+      parts.push(...copied.map((r) => quote_path(base + r.name, pane.agent_id)));
       if (pane.view.file_panel && typeof pane.view.file_panel.refresh === 'function') pane.view.file_panel.refresh();
       if (failed.length > 0) {
         show_banner(grid, `Copied ${copied.length}, failed ${failed.length}: ${failed.map((f) => `${f.name}: ${f.message}`).join('; ')}`);
       }
     }
-    if (parts.length > 0 && pane.status === 'running' && pane.terminal_id) {
-      window.hub.terminals.write(pane.terminal_id, `${parts.join(' ')} `);
+    if (parts.length > 0 && !pane.disposed && pane.status === 'running' && pane.terminal_id) {
+      select_tab(grid, pane);
+      pane.term.paste(`${parts.join(' ')} `);
       pane.term.focus();
     }
   }
@@ -708,8 +824,9 @@
     return v === r || v.startsWith(r + '\\');
   }
 
-  function quote_path(p) {
-    return /[\s"]/.test(p) ? `"${p}"` : p;
+  function quote_path(p, agent_id) {
+    if (agent_id === 'terminal') return `'${p.replace(/'/g, "''")}'`;
+    return `"${p}"`;
   }
 
   function build_pane(grid, view, spec) {
@@ -921,6 +1038,7 @@
     close_btn.title = 'Close file';
     titlebar.append(icon, name_el, path_el, open_btn, reveal_btn, close_btn);
     const body = create_el('div', 'tf-body');
+    body.tabIndex = -1;
     body.textContent = 'Loading…';
     element.append(titlebar, body);
 
@@ -972,7 +1090,8 @@
   }
 
   function mount_file_pane(grid, view, pane) {
-    insert_into_layout(view, pane);
+    const anchor = view.selected && !view.selected.disposed ? view.selected : largest_pane(view);
+    insert_into_layout(view, pane, anchor, 'bottom');
     view.panes.push(pane);
     view.pane_grid.appendChild(pane.element);
     relayout_view(grid, view);
@@ -1068,16 +1187,12 @@
       (pane) => pane.kind === 'file' && !pane.disposed && pane.path === rel_path
     );
     if (existing) {
-      if (view.zoomed && view.zoomed !== existing) {
-        view.zoomed = null;
-        relayout_view(grid, view);
-      }
-      set_active_pane(grid, existing);
+      select_tab(grid, existing);
       return;
     }
     const pane = build_file_pane(grid, view, { name: rel_path.split(/[\\/]/).pop() || rel_path, path: rel_path });
     mount_file_pane(grid, view, pane);
-    set_active_pane(grid, pane);
+    select_tab(grid, pane);
   }
 
   // ---- tiled layout ----
@@ -1221,8 +1336,10 @@
     if (view.zoomed && (view.zoomed.disposed || !view.panes.includes(view.zoomed))) view.zoomed = null;
     const dividers = [];
     if (view.layout) compute_layout(view.layout, FULL_RECT, dividers);
+    if (!view.selected || view.selected.disposed) view.selected = view.panes[0] || null;
     for (const pane of view.panes) place_pane(pane, view);
-    render_dividers(grid, view, view.zoomed ? [] : dividers);
+    render_tabs(grid, view);
+    render_dividers(grid, view, view.zoomed || grid.mode === 'tabs' ? [] : dividers);
     view.hint.hidden = count_panes(view) > 0;
     if (grid.active_view === view) update_note(grid);
   }
@@ -1236,7 +1353,7 @@
   }
 
   function place_pane(pane, view) {
-    const zoomed = view.zoomed;
+    const zoomed = pane.grid.mode === 'tabs' ? view.selected : view.zoomed;
     const rect = zoomed === pane ? FULL_RECT : pane.rect || FULL_RECT;
     const element = pane.element;
     const half_gap = PANE_GAP_PX / 2;
@@ -1393,6 +1510,7 @@
   function attach_pane_rearrange(grid, pane) {
     const handle = pane.titlebar;
     handle.addEventListener('pointerdown', (event) => {
+      if (grid.mode === 'tabs') return;
       if (event.button !== 0) return;
       if (event.target && event.target.closest && event.target.closest('button')) return;
       const view = pane.view;
@@ -1515,7 +1633,77 @@
     const previous = grid.active_pane;
     if (previous && previous !== pane) previous.element.classList.remove('tg-active');
     grid.active_pane = pane;
+    pane.view.selected = pane;
     pane.element.classList.add('tg-active');
+    render_tabs(grid, pane.view);
+  }
+
+  function select_tab(grid, pane) {
+    if (pane.disposed) return;
+    const view = pane.view;
+    if (view.zoomed) view.zoomed = pane;
+    set_active_pane(grid, pane);
+    relayout_view(grid, view);
+    refit_pane(pane);
+    if (pane.term) pane.term.focus();
+    else pane.body.focus();
+    if (view.file_panel) view.file_panel.select(pane.kind === 'file' ? pane.path : null);
+  }
+
+  function render_tabs(grid, view) {
+    for (const pane of view.panes) {
+      if (!pane.tab) {
+        const tab = create_el('div', 'tg-tab');
+        tab.dataset.paneId = String(pane.pane_id);
+        const button = create_el('button', 'tg-tab-select');
+        button.type = 'button';
+        button.setAttribute('role', 'tab');
+        pane.element.id = `pane-${pane.pane_id}`;
+        button.setAttribute('aria-controls', pane.element.id);
+        button.title = pane.kind === 'file' ? pane.path : `${pane.name} · ${pane.agent_label}`;
+        if (pane.kind === 'file') {
+          button.draggable = true;
+          button.addEventListener('dragstart', (event) => {
+            event.dataTransfer.setData(INTERNAL_PATH_TYPE, JSON.stringify({
+              root_path: view.workspace.path, rel_path: pane.path,
+            }));
+            event.dataTransfer.setData('text/plain', pane.path);
+            event.dataTransfer.effectAllowed = 'copy';
+          });
+        }
+        const logo = build_logo(pane.agent_id);
+        if (logo) button.append(logo);
+        else button.append(create_el('span', 'tg-tab-glyph', pane.kind === 'file' ? '▤' : '›_'));
+        button.append(create_el('span', 'tg-tab-label', pane.kind === 'file' ? pane.name : `${pane.name} · ${pane.agent_label}`));
+        button.addEventListener('click', () => select_tab(grid, pane));
+        button.addEventListener('keydown', (event) => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const index = view.panes.indexOf(pane);
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? view.panes.length - 1 :
+            (index + (event.key === 'ArrowLeft' ? -1 : 1) + view.panes.length) % view.panes.length;
+          select_tab(grid, view.panes[next]);
+          view.panes[next].tab_button.focus();
+        });
+        const close = create_el('button', 'tg-tab-close', '×');
+        close.type = 'button';
+        close.setAttribute('aria-label', `Close ${pane.name}`);
+        close.addEventListener('click', () => {
+          if (pane.kind === 'file') { remove_pane(grid, pane); notify_grid(grid); }
+          else void close_pane(grid, pane);
+        });
+        tab.append(button, close);
+        pane.tab = tab;
+        pane.tab_button = button;
+        view.tabs.append(tab);
+        if (pane.kind !== 'file') attach_drop_to_pane(grid, pane, tab);
+      }
+      const selected = view.selected === pane;
+      pane.tab.classList.toggle('tg-tab-active', selected);
+      pane.tab_button.setAttribute('aria-selected', String(selected));
+      pane.tab_button.tabIndex = selected ? 0 : -1;
+    }
+    view.tabs.hidden = view.panes.length === 0;
   }
 
   function remove_pane(grid, pane) {
@@ -1531,10 +1719,12 @@
     if (pane.resize_timer) window.clearTimeout(pane.resize_timer);
     if (pane.observer) pane.observer.disconnect();
     if (pane.term) pane.term.dispose();
+    if (pane.tab) pane.tab.remove();
     pane.element.remove();
     remove_from_layout(view, pane);
     if (grid.active_pane === pane) grid.active_pane = null;
     relayout_view(grid, view);
+    if (!view.disposed && view.selected) select_tab(grid, view.selected);
   }
 
   // First unused person name in this workspace; "Agent N" once the pool is used up.
@@ -1743,8 +1933,7 @@
     for (const view of grid.views.values()) await wait_for_attach(view);
     const pane = find_pane_in_grid(grid, terminal_id);
     if (!pane) return false;
-    set_active_pane(grid, pane);
-    pane.term.focus();
+    select_tab(grid, pane);
     pane.element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     return true;
   }

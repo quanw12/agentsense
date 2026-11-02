@@ -1092,3 +1092,8 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+/* An arbitrary installed CLI can use the same session/worktree lifecycle as catalog agents. */
+.launch_custom { margin-top: 16px; color: var(--muted); }
+.launch_custom summary { cursor: pointer; }
+.launch_custom_form { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; }
+.launch_custom_form input { flex: 1 1 200px; }
