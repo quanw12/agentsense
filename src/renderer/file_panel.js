@@ -29,6 +29,7 @@
     const children_open = {}; // rel dir -> true when expanded at least once
     let drop_timer = 0;
     let drag_depth = 0;
+    let selected_path = null;
 
     const root = document.createElement('div');
     root.className = 'fp-panel';
@@ -37,7 +38,8 @@
     header.className = 'fp-header';
     const label = document.createElement('span');
     label.className = 'fp-title';
-    label.textContent = 'Files';
+    label.textContent = workspace.name || 'Workspace';
+    label.title = workspace.path;
     const refresh = document.createElement('button');
     refresh.className = 'fp-refresh';
     refresh.type = 'button';
@@ -53,6 +55,7 @@
     const tree = document.createElement('div');
     tree.className = 'fp-tree';
     tree.setAttribute('role', 'tree');
+    tree.setAttribute('aria-label', 'Workspace files');
     tree.textContent = 'Loading…';
 
     const drop_overlay = document.createElement('div');
@@ -264,6 +267,8 @@
       row.dataset.path = rel_path;
       row.dataset.kind = 'dir';
       row.setAttribute('role', 'treeitem');
+      row.setAttribute('aria-expanded', 'false');
+      row.tabIndex = 0;
       const caret = document.createElement('span');
       caret.className = 'fp-caret';
       caret.textContent = '▸';
@@ -273,6 +278,9 @@
       label_el.title = rel_path;
       row.append(caret, label_el);
       row.addEventListener('click', () => toggle_dir(rel_path, row, caret));
+      row.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); row.click(); }
+      });
       return row;
     }
 
@@ -282,10 +290,13 @@
       row.dataset.path = rel_path;
       row.dataset.kind = 'file';
       row.setAttribute('role', 'treeitem');
+      row.tabIndex = 0;
+      row.classList.toggle('fp-selected', selected_path === rel_path);
+      row.setAttribute('aria-selected', String(selected_path === rel_path));
       row.draggable = true;
       row.title = 'Click to open, drag onto a terminal to paste its path';
       row.addEventListener('dragstart', (event) => {
-        event.dataTransfer.setData(INTERNAL_PATH_TYPE, rel_path);
+        event.dataTransfer.setData(INTERNAL_PATH_TYPE, JSON.stringify({ root_path: workspace.path, rel_path }));
         event.dataTransfer.setData('text/plain', rel_path);
         event.dataTransfer.effectAllowed = 'copy';
       });
@@ -298,7 +309,11 @@
       row.append(caret, label_el);
       row.addEventListener('click', () => {
         if (disposed) return;
+        select(rel_path);
         on_open_file(rel_path);
+      });
+      row.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); row.click(); }
       });
       return row;
     }
@@ -317,6 +332,7 @@
         // Collapse: keep the data but hide it (cheap), so it can pop back instantly next time.
         previous.remove();
         row.classList.remove('fp-open');
+        row.setAttribute('aria-expanded', 'false');
         caret.textContent = '▸';
         return;
       }
@@ -336,6 +352,7 @@
       if (disposed) return;
       children_open[rel_path] = true;
       row.classList.add('fp-open');
+      row.setAttribute('aria-expanded', 'true');
       caret.textContent = '▾';
       apply_children(rel_path, normalize_list(entries));
     }
@@ -365,8 +382,18 @@
 
     load_root_rebuild();
 
+    function select(rel_path) {
+      selected_path = rel_path;
+      for (const row of tree.querySelectorAll('.fp-row-file')) {
+        const selected = row.dataset.path === rel_path;
+        row.classList.toggle('fp-selected', selected);
+        row.setAttribute('aria-selected', String(selected));
+      }
+    }
+
     return {
       refresh: load_root_rebuild,
+      select,
       dispose,
     };
   }

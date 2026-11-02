@@ -20,6 +20,10 @@
   return [
     { id: 'claude', label: 'Claude Code', command: 'claude', install_command: 'npm i -g @anthropic-ai/claude-code', glyph: 'CC', logo: 'assets/agents/claude.svg', models: ['sonnet', 'opus', 'haiku'] },
     { id: 'codex', label: 'Codex', command: 'codex', install_command: 'npm i -g @openai/codex', glyph: 'CX', logo: 'assets/agents/codex.svg', models: ['gpt-5.1-codex', 'gpt-5.1', 'o4-mini'] },
+    { id: 'gemini', label: 'Gemini CLI', command: 'gemini', install_command: 'npm i -g @google/gemini-cli', glyph: 'GE', logo: null, models: [], note: 'Enterprise Code Assist / API keys; personal Google plans use Antigravity CLI.' },
+    { id: 'copilot', label: 'GitHub Copilot', command: 'copilot', install_command: 'npm i -g @github/copilot', glyph: 'GH', logo: null, models: [], note: 'Requires Node.js 22+ and PowerShell 6+ on Windows.' },
+    { id: 'pi', label: 'Pi', command: 'pi', install_command: 'npm i -g --ignore-scripts @earendil-works/pi-coding-agent', glyph: 'π', logo: null, models: [], note: 'Requires Node.js 22.19+.' },
+    { id: 'hermes', label: 'Hermes Agent', command: 'hermes', install_command: 'powershell -NoProfile -Command "iex (irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)"', glyph: 'HE', logo: null, models: [] },
     { id: 'cursor', label: 'Cursor Agent', command: 'cursor-agent', install_command: null, glyph: 'CU', logo: 'assets/agents/cursor.svg', models: [] },
     { id: 'droid', label: 'Droid', command: 'droid', install_command: null, glyph: 'DR', logo: 'assets/agents/droid.svg', models: [] },
     { id: 'opencode', label: 'OpenCode', command: 'opencode', install_command: 'npm i -g opencode-ai', glyph: 'OC', logo: 'assets/agents/opencode.svg', models: [] },

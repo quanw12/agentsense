@@ -116,7 +116,7 @@
   min-width: 0;
 }
 
-/* View layout: [file panel | pane area]. The panel is a fixed-width side column; the pane area fills
+/* View layout: [pane area | file panel]. The panel is a resizable side column; the pane area fills
    the rest and tiles the panes from a split tree (positions are set in terminal_grid.js). */
 .tg-view {
   position: absolute;
@@ -132,10 +132,10 @@
 
 .tg-view .fp-side {
   display: none;
-  flex: 0 0 250px;
+  flex: 0 0 min(var(--files-width, 270px), 45%);
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
 }
 
 .tg-view.tg-with-files .fp-side {
@@ -144,16 +144,19 @@
 
 .tg-pane-area {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
 }
 
 .tg-grid {
+  flex: 1 1 auto;
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  height: 100%;
+  height: auto;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -191,7 +194,7 @@
   min-height: 0;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   overflow: hidden;
 }
 
@@ -517,4 +520,67 @@
 /* While dragging anywhere over the grid, keep the terminal text cursor quiet. */
 .tg-pane.tg-drop-target .xterm {
   cursor: copy;
+}
+
+/* Compact workbench chrome: persistent tabs above the split panes, explorer on the right. */
+.tg-toolbar { background: var(--panel); }
+.tg-note { margin-left: 8px; margin-right: auto; }
+.tg-tabs {
+  display: flex;
+  flex: 0 0 36px;
+  min-width: 0;
+  overflow-x: auto;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.tg-tab {
+  display: flex;
+  flex: 0 0 auto;
+  max-width: 240px;
+  min-width: 120px;
+  align-items: center;
+  border-right: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+}
+.tg-tab-active { background: var(--panel_raised); border-bottom-color: var(--accent); color: var(--text); }
+.tg-tab-select {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tg-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tg-tab-glyph { color: var(--muted); font-family: Consolas, monospace; }
+.tg-tab-close {
+  flex: 0 0 24px;
+  height: 24px;
+  padding: 0;
+  margin-right: 4px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tg-tab-close:hover { background: var(--border_strong); color: var(--text); }
+.tg-tab.tg-drop-target { background: var(--accent_fill); box-shadow: inset 0 0 0 1px var(--accent); }
+.tg-files-resize { display: none; flex: 0 0 4px; cursor: col-resize; touch-action: none; }
+.tg-with-files .tg-files-resize { display: block; }
+.tg-files-resize:hover, .tg-files-resize:focus-visible { background: var(--accent_line); }
+.tg-root :is(button, [tabindex]):focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
+@media (max-width: 850px) {
+  .tg-note { display: none; }
+  .tg-toolbar [data-action="toggle_mode"] { margin-left: auto; }
+  .tg-view .fp-side { flex-basis: min(var(--files-width, 270px), 35%); }
 }

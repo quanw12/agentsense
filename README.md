@@ -21,18 +21,27 @@ worktree. Everything runs locally, works offline and stays on your machine.
 
 - **Agent panes** — a terminal grid (xterm.js + node-pty) that runs up to 6 seats
   at once, in one window.
-- **Agent catalog** — Claude Code, Codex, Cursor Agent, Droid, OpenCode,
+- **Agent catalog** — Claude Code, Codex, Gemini CLI, GitHub Copilot, Pi, Hermes Agent, Cursor Agent, Droid, OpenCode,
   DeepSeek Harness, Grok Build, Kimi Code, Antigravity CLI and a plain
   PowerShell terminal. Agents that are not installed yet show their install
-  command and can be installed from the launch page.
+  command and can be installed from the launch page. **Run another CLI agent**
+  launches any installed command with the same terminal and worktree lifecycle.
 - **Presets** — save a seat layout ("2× Claude + 1× Codex") and relaunch the
   whole squad with one click.
 - **Per-seat models & third-party APIs** — choose the model (or a third-party
   provider with per-session env injection) for every seat.
-- **Workspace files panel** — browse the workspace tree beside the panes, open
-  files in a viewer, and drag & drop files from Explorer: onto the panel to
-  copy them into the workspace, or onto a CLI pane to copy them in and paste
-  the path straight into the command line.
+- **Right files panel & tabs** — browse files (including dotfiles) on the right;
+  click a file to open a preview alongside the terminals. File and agent tabs
+  switch instantly; choose **Tab view** for one pane or **Split view** for all
+  panes. Drag the explorer divider to resize it. Panel visibility, width and
+  view mode survive restart. Shortcuts: **Ctrl+Shift+E** toggles files,
+  **Ctrl+Tab / Ctrl+Shift+Tab** switch tabs.
+- **Drag files to agents** — drag from the tree, an open file tab, or Windows
+  Explorer onto a specific terminal or agent tab. External files are copied
+  into that session's working directory (including isolated worktrees), then
+  their quoted paths are pasted into its prompt without pressing Enter.
+  Existing filenames are preserved with numbered copies. Dropping onto the
+  explorer instead copies into the workspace root.
 - **Git worktree isolation** — give a pane its own worktree
   (`<repo>.worktrees/<name>`, branch `agentsense/<name>`); nothing is ever
   force-removed.
@@ -78,6 +87,7 @@ cd AgentSense
 npm install
 
 npm run start        :: run in dev
+npm run smoke:workbench :: real Electron/terminal checks for tabs, explorer, drops and worktrees
 npm run icons        :: repack build/icon.png + build/icon.ico from assets/icon.png (optional)
 npm run dist         :: build dist/win-unpacked with electron-builder
 npm run build:app    :: mirror dist/win-unpacked into app/ (the installer payload)
@@ -87,6 +97,9 @@ Then double-click `Install AgentSense.cmd` (or run `dist\win-unpacked\AgentSense
 
 `npm run smoke:mobile` starts the mobile access server inside Electron with a
 temp profile and runs an end-to-end check (auth, attach, input, create, kill).
+
+The feature-by-feature comparison with the Orca references, validation details,
+and current limits are in [docs/orca-workbench.md](docs/orca-workbench.md).
 
 ## Mobile access
 
