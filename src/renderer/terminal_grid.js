@@ -736,7 +736,8 @@
     element.addEventListener('mousedown', () => {
       // Focused panes float above the ones behind them.
       pane_serial += 1;
-      element.style.zIndex = String(pane_serial);
+      pane.z = pane_serial;
+      element.style.zIndex = String(pane.z % 100000);
     }, true);
     attach_pane_drag(pane);
     attach_pane_resize(pane, 'e');
@@ -829,7 +830,6 @@
   // ---- file viewer panes ----
   // A read-only pane that shows one workspace file. It has no terminal: close removes it, drag/resize
   // work like terminal panes (same handle logic), and it never counts as a running session.
-  const FILE_READ_LIMIT = 512 * 1024; // must match files:read in the main process
 
   function format_byte_size(bytes) {
     if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -888,6 +888,15 @@
       notify_grid(grid);
     });
     element.addEventListener('mousedown', () => set_active_pane(grid, pane), true);
+    element.addEventListener('mousedown', () => {
+      pane_serial += 1;
+      pane.z = pane_serial;
+      element.style.zIndex = String(pane.z % 100000);
+    }, true);
+    attach_pane_drag(pane);
+    attach_pane_resize(pane, 'e');
+    attach_pane_resize(pane, 's');
+    attach_pane_resize(pane, 'se');
     pane.observer = new ResizeObserver(() => schedule_refit(pane));
     pane.observer.observe(body);
     return pane;
@@ -907,15 +916,17 @@
       if (pane.disposed) return;
       pane.body.textContent = '';
       const meta = create_el('div', 'tf-meta');
-      const size = format_byte_size(result.bytes != null ? result.bytes : 0);
-      if (result.kind === 'text') {
-        meta.textContent = `${size}${result.bytes >= FILE_READ_LIMIT ? ' (truncated)' : ''}`;
+      const size = format_byte_size(result.size != null ? result.size : 0);
+      if (result.binary === false) {
+        meta.textContent = `${size}${result.truncated ? ' (truncated)' : ''}`;
         pane.body.append(meta);
         const text = create_el('div', 'tf-text');
-        text.textContent = String(result.text || '');
+        text.textContent = String(result.content || '');
         pane.body.append(text);
       } else {
-        meta.textContent = `${result.ext || 'This file'} — binary (preview skipped, ${size})`;
+        meta.textContent = result.too_large
+          ? `File too large to preview (${size})`
+          : `${pane.name || 'This file'} — binary (preview skipped, ${size})`;
         pane.body.append(meta);
       }
     } catch (error) {
@@ -993,7 +1004,7 @@
     element.style.top = `${pane.rect.y * 100}%`;
     element.style.width = `${pane.rect.w * 100}%`;
     element.style.height = `${pane.rect.h * 100}%`;
-    element.style.zIndex = String(pane.pane_id % 100000);
+    element.style.zIndex = String((pane.z || pane.pane_id) % 100000);
   }
 
   // Clamp helpers: a pane stays inside the pane area and never smaller than MIN_PANE_PX.
