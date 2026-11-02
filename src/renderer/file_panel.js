@@ -1,12 +1,19 @@
 // File panel (file_panel.js): workspace file tree beside the sessions of one workspace. Folders expand
 // (loaded on demand), files open a viewer pane (via on_open_file; pane itself lives in terminal_grid.js),
-// and files dropped anywhere over the panel are copied into the workspace root via files.copy_in.
+// files dropped anywhere over the panel are copied into the workspace root via files.copy_in, and a row
+// can be dragged onto a terminal pane to paste its path there (INTERNAL_PATH_TYPE, read by terminal_grid.js).
 // Classic script (no import/export). Exposes window.init_file_panel(options).
 // Depends on window.hub (preload.js: files.list / files.copy_in / files.path_for_file).
 (function file_panel_module() {
   'use strict';
 
   const DROP_FEEDBACK_MS = 4000;
+  const INTERNAL_PATH_TYPE = 'application/x-agentsense-path';
+
+  // Only drags from the OS carry files to copy; a row dragged out of this tree does not.
+  function is_os_file_drag(event) {
+    return Boolean(event.dataTransfer) && Array.from(event.dataTransfer.types || []).includes('Files');
+  }
 
   function init_file_panel(options) {
     const settings = options || {};
@@ -151,7 +158,7 @@
     root.addEventListener(
       'dragenter',
       (event) => {
-        if (disposed) return;
+        if (disposed || !is_os_file_drag(event)) return;
         event.preventDefault();
         drag_depth += 1;
         drop_overlay.hidden = false;
@@ -162,9 +169,9 @@
     root.addEventListener(
       'dragover',
       (event) => {
-        if (disposed) return;
+        if (disposed || !is_os_file_drag(event)) return;
         event.preventDefault();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        event.dataTransfer.dropEffect = 'copy';
         drop_overlay.hidden = false;
       },
       false
@@ -185,6 +192,7 @@
       'drop',
       async (event) => {
         event.preventDefault();
+        if (!is_os_file_drag(event)) return;
         event.stopPropagation();
         const files_list = event.dataTransfer ? Array.from(event.dataTransfer.files || []) : [];
         stop_drag_depth_reset();
@@ -274,6 +282,13 @@
       row.dataset.path = rel_path;
       row.dataset.kind = 'file';
       row.setAttribute('role', 'treeitem');
+      row.draggable = true;
+      row.title = 'Click to open, drag onto a terminal to paste its path';
+      row.addEventListener('dragstart', (event) => {
+        event.dataTransfer.setData(INTERNAL_PATH_TYPE, rel_path);
+        event.dataTransfer.setData('text/plain', rel_path);
+        event.dataTransfer.effectAllowed = 'copy';
+      });
       const caret = document.createElement('span');
       caret.className = 'fp-caret';
       const label_el = document.createElement('span');

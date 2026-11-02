@@ -117,7 +117,7 @@
 }
 
 /* View layout: [file panel | pane area]. The panel is a fixed-width side column; the pane area fills
-   the rest and positions every pane absolutely (free layout, see terminal_grid.js). */
+   the rest and tiles the panes from a split tree (positions are set in terminal_grid.js). */
 .tg-view {
   position: absolute;
   inset: 0;
@@ -157,7 +157,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 8px;
+  padding: 3px;
 }
 
 .tg-hint,
@@ -181,7 +181,7 @@
   font-size: 13px;
 }
 
-/* Pane: title bar + xterm, positioned absolutely inside the pane area */
+/* Pane: title bar + xterm, positioned absolutely inside the pane area (one tile of the split tree) */
 .tg-pane {
   position: absolute;
   display: flex;
@@ -199,14 +199,87 @@
   border-color: var(--accent_line);
 }
 
-.tg-pane.tg-dragging,
-.tg-pane.tg-resizing {
-  opacity: 0.85;
+/* The pane being moved fades while the drop indicator shows where it will land. */
+.tg-pane.tg-dragging {
+  opacity: 0.45;
   border-color: var(--accent_line);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 
-/* Title bar: also the drag handle */
+/* Iframes (PDF, documents) would swallow the pointer while a drag crosses them. */
+.tg-rearranging .tg-pane iframe,
+.tg-resizing-row .tg-pane iframe,
+.tg-resizing-column .tg-pane iframe {
+  pointer-events: none;
+}
+
+.tg-resizing-row,
+.tg-resizing-row * {
+  cursor: col-resize !important;
+}
+
+.tg-resizing-column,
+.tg-resizing-column * {
+  cursor: row-resize !important;
+}
+
+/* Dividers sit in the gaps between tiles; the thin line lights up on hover and while dragging. */
+.tg-divider {
+  position: absolute;
+  z-index: 4;
+  touch-action: none;
+}
+
+.tg-divider-row {
+  cursor: col-resize;
+}
+
+.tg-divider-column {
+  cursor: row-resize;
+}
+
+.tg-divider::after {
+  content: "";
+  position: absolute;
+  background: transparent;
+  transition: background 0.12s;
+}
+
+.tg-divider-row::after {
+  top: 6px;
+  bottom: 6px;
+  left: calc(50% - 1px);
+  width: 2px;
+}
+
+.tg-divider-column::after {
+  left: 6px;
+  right: 6px;
+  top: calc(50% - 1px);
+  height: 2px;
+}
+
+.tg-divider:hover::after,
+.tg-divider.tg-divider-active::after {
+  background: var(--accent);
+}
+
+/* Where a moved pane will land: half of the target (split) or all of it (swap). */
+.tg-drop-indicator {
+  position: absolute;
+  z-index: 6;
+  box-sizing: border-box;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent_fill);
+  pointer-events: none;
+  transition: left 0.08s, top 0.08s, width 0.08s, height 0.08s;
+}
+
+.tg-drop-indicator.tg-drop-swap {
+  border-style: dashed;
+}
+
+/* Title bar: also the handle for moving the pane */
 .tg-pane-titlebar {
   flex: 0 0 auto;
   display: flex;
@@ -222,37 +295,6 @@
 
 .tg-pane.tg-dragging .tg-pane-titlebar {
   cursor: grabbing;
-}
-
-/* Resize handles on the edges (invisible, but grabbable) */
-.tg-handle {
-  position: absolute;
-  touch-action: none;
-  z-index: 5;
-}
-
-.tg-handle-e {
-  top: 26px;
-  right: -3px;
-  width: 7px;
-  height: calc(100% - 26px);
-  cursor: ew-resize;
-}
-
-.tg-handle-s {
-  left: 0;
-  bottom: -3px;
-  width: calc(100% - 10px);
-  height: 7px;
-  cursor: ns-resize;
-}
-
-.tg-handle-se {
-  right: -2px;
-  bottom: -2px;
-  width: 12px;
-  height: 12px;
-  cursor: nwse-resize;
 }
 
 .tg-dot {
@@ -356,9 +398,27 @@
   color: var(--accent);
 }
 
-/* File viewer pane (read-only preformatted text) */
+/* File viewer pane: text, image/media, PDF or document preview */
 .tg-file-pane .tg-pane-titlebar {
   cursor: grab;
+}
+
+.tg-file-pane .tg-pane-title {
+  flex: 0 1 auto;
+  max-width: none;
+}
+
+.tg-file-pane .tg-pane-agent {
+  flex: 1 1 0;
+}
+
+.tf-action {
+  border-color: var(--border_strong);
+  color: var(--muted);
+}
+
+.tf-action:hover {
+  color: var(--text);
 }
 
 .tf-dot {
@@ -395,9 +455,58 @@
   user-select: text;
 }
 
-.tf-text.tf-error {
-  color: var(--danger_text);
-  white-space: normal;
+.tf-media {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.tf-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  /* Checkerboard so transparent images stay visible on the black background. */
+  background: repeating-conic-gradient(#2a2a2e 0% 25%, #1c1c1f 0% 50%) 0 0 / 16px 16px;
+}
+
+.tf-video {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.tf-audio {
+  width: min(480px, 100%);
+}
+
+.tf-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+.tf-frame.tf-doc {
+  background: #3a3a3e;
+}
+
+.tf-unsupported {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tf-unsupported .tg-btn {
+  height: 26px;
 }
 
 /* Drop target feedback: a file drag hovering over a pane lights up its frame. */
