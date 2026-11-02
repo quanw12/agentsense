@@ -203,23 +203,23 @@
         } catch (error) {
           path = typeof file.path === 'string' ? file.path : '';
         }
-        if (path) sources.push(path);
+        if (path) sources.push({ path, name: file.name });
       }
       if (sources.length === 0) {
         toast_drop_hint('Could not resolve the file paths of that drop');
         return;
       }
       try {
-        const results = await window.hub.files.copy_in(workspace.path, sources);
+        const outcome = await window.hub.files.copy_in(workspace.path, sources);
         if (disposed) return;
-        const entries = Array.isArray(results) ? results : [];
-        const copied = entries.filter((entry) => entry && entry.copied);
-        const failed = entries.filter((entry) => entry && !entry.copied && entry.error);
+        const entries = outcome && Array.isArray(outcome.results) ? outcome.results : [];
+        const copied = entries.filter((entry) => entry && entry.ok);
+        const failed = entries.filter((entry) => entry && !entry.ok);
         if (copied.length > 0) await load_root_rebuild();
         if (disposed) return;
         if (failed.length > 0) {
           toast_drop_hint(`Copied ${copied.length}, failed ${failed.length} (error logged)`);
-          on_error(`Could not copy: ${failed.map((entry) => `${entry.path}: ${entry.error}`).join('; ')}`);
+          on_error(`Could not copy: ${failed.map((entry) => `${entry.name}: ${entry.message}`).join('; ')}`);
         } else {
           toast_drop_hint(`Copied ${copied.length} file${copied.length === 1 ? '' : 's'} to this workspace`);
         }
