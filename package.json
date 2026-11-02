@@ -19,12 +19,15 @@
     "dev": "AGENT_HUB_DEVTOOLS=1 electron .",
     "dist": "electron-builder --win --dir",
     "build:app": "node scripts/build_app.mjs",
-    "icons": "node scripts/gen_icons.mjs"
+    "icons": "node scripts/gen_icons.mjs",
+    "smoke:mobile": "electron scripts/smoke_mobile.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",

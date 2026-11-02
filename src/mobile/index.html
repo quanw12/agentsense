@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- interactive-widget=resizes-content keeps the terminal visible above the Android keyboard. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#000000">
+  <title>AgentSense</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.png">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Session list -->
+    <section id="view_sessions">
+      <header id="topbar">
+        <span id="conn_dot" class="conn_dot offline" title="Connection"></span>
+        <h1 id="topbar_title">AgentSense</h1>
+        <button id="btn_new" class="tb_button primary" type="button">+ New</button>
+        <button id="btn_refresh" class="tb_button" type="button" title="Refresh" aria-label="Refresh">
+          <svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true" focusable="false"><path d="M10 6a4 4 0 1 1-1.2-2.8M10 1.4v2.2H7.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </header>
+      <div id="ws_bar">
+        <label for="ws_select">Workspace</label>
+        <select id="ws_select"></select>
+      </div>
+      <div id="session_list" role="list"></div>
+      <p id="sessions_empty" hidden>No sessions in this workspace. Use + New to start one.</p>
+    </section>
+
+    <!-- Terminal -->
+    <section id="view_terminal" hidden>
+      <header id="term_bar">
+        <button id="btn_back" class="tb_button" type="button">‹ Sessions</button>
+        <span id="term_title"></span>
+        <span id="term_dot" class="dot"></span>
+      </header>
+      <div id="term_host"></div>
+      <div id="input_zone">
+        <div id="line_row" hidden>
+          <input id="line_input" type="text" enterkeyhint="send" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Type a line, Enter sends it">
+          <button id="btn_send" class="tb_button primary" type="button">Send</button>
+        </div>
+        <div id="keys_row"></div>
+      </div>
+    </section>
+
+    <!-- New session bottom sheet -->
+    <div id="sheet_new" class="sheet_backdrop" hidden>
+      <div id="sheet_card" role="dialog" aria-label="New session">
+        <header id="sheet_header">
+          <h2>New session</h2>
+          <button id="btn_sheet_close" class="tb_button" type="button" aria-label="Close">
+            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>
+          </button>
+        </header>
+        <label class="sheet_field" for="sheet_ws">Workspace
+          <select id="sheet_ws"></select>
+        </label>
+        <label class="sheet_field" for="sheet_name">Name
+          <input id="sheet_name" type="text" placeholder="Session name" maxlength="60">
+        </label>
+        <div id="agent_grid" role="listbox" aria-label="Agent"></div>
+        <button id="btn_launch" class="tb_button primary big" type="button" disabled>Launch</button>
+      </div>
+    </div>
+
+    <div id="toast" hidden></div>
+  </div>
+
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="agents.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

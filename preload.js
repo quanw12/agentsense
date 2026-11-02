@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('hub', {
     on_data: (callback) => subscribe_channel('terminals:data', callback),
     on_exit: (callback) => subscribe_channel('terminals:exit', callback),
     on_status: (callback) => subscribe_channel('terminals:status', callback),
+    // Panes created or closed by the phone (mobile_server.js -> ipc_mobile.js broadcast).
+    on_created: (callback) => subscribe_channel('terminals:created', callback),
+    on_closed: (callback) => subscribe_channel('terminals:closed', callback),
     get_status: () => ipcRenderer.invoke('terminals:get_status'),
   },
   sessions: {
@@ -74,5 +77,12 @@ contextBridge.exposeInMainWorld('hub', {
       }
       return typeof file === 'object' && file ? file.path || '' : '';
     },
+  },
+  mobile: {
+    get_state: () => ipcRenderer.invoke('mobile:get_state'),
+    set_enabled: (enabled) => ipcRenderer.invoke('mobile:set_enabled', enabled),
+    set_bind_all: (bind_all) => ipcRenderer.invoke('mobile:set_bind_all', bind_all),
+    set_keep_awake: (keep_awake) => ipcRenderer.invoke('mobile:set_keep_awake', keep_awake),
+    rotate_token: () => ipcRenderer.invoke('mobile:rotate_token'),
   },
 });
