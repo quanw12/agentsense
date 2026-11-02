@@ -127,6 +127,8 @@ function create_main_window() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Chromium's PDF viewer, used by the file viewer pane for .pdf files.
+      plugins: true,
     },
   });
   // No menu bar at all (File / Edit / View / Window), and no space reserved for one.

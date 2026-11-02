@@ -1,15 +1,34 @@
 // ipcMain handlers for the workspace file panel:
 //  files:list(root_path, rel)         - one folder level of entries
-//  files:read(root_path, rel, limit)  - text content of one file for the viewer
+//  files:read(root_path, rel, limit)  - what the viewer shows: text content, or a file URL for previews
+//  files:render_document(root, rel)   - a .docx converted to HTML for the viewer
+//  files:open_external(root, rel)     - opens the file with its default app
+//  files:reveal(root, rel)            - shows the file in File Explorer
 //  files:copy_in(root_path, sources)  - copies files/dropped folders from the OS into the workspace
 // Every relative path is resolved and constrained to root_path, so the page cannot escape the workspace.
 const fs = require('fs');
 const path = require('path');
-const { ipcMain } = require('electron');
+const { pathToFileURL } = require('url');
+const { ipcMain, shell } = require('electron');
 
 const TEXT_MAX_BYTES = 1024 * 512; // the viewer shows at most this much of a file
 const COPY_MAX_NAME = 180;
 const COPY_MAX_ITEMS = 100;
+const DOCUMENT_MAX_BYTES = 1024 * 1024 * 40; // larger .docx files are not converted
+
+// Files the viewer previews natively (the renderer loads them by file URL).
+const PREVIEW_KINDS = {
+  '.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.gif': 'image', '.webp': 'image', '.bmp': 'image',
+  '.ico': 'image', '.svg': 'image', '.avif': 'image',
+  '.pdf': 'pdf',
+  '.mp4': 'video', '.webm': 'video', '.mov': 'video', '.m4v': 'video', '.ogv': 'video',
+  '.mp3': 'audio', '.wav': 'audio', '.ogg': 'audio', '.m4a': 'audio', '.flac': 'audio', '.aac': 'audio',
+  '.docx': 'docx',
+};
+// Office formats without a built-in preview: the viewer offers "Open with default app".
+const OFFICE_EXTS = new Set([
+  '.doc', '.dot', '.rtf', '.odt', '.xls', '.xlsx', '.xlsm', '.ods', '.ppt', '.pptx', '.odp', '.pages', '.numbers', '.key',
+]);
 
 function to_rel(root, target) {
   const rel = path.relative(root, target);
@@ -83,6 +102,7 @@ function looks_textual(file_path, size, ext) {
     '.7z', '.rar', '.pdf', '.mp3', '.mp4', '.avi', '.mov', '.wav', '.woff', '.woff2', '.ttf',
     '.otf', '.eot', '.pdb', '.bin', '.so', '.dylib', '.pak', '.asar',
   ]);
+  for (const office of OFFICE_EXTS) binary_exts.add(office);
   if (binary_exts.has(ext)) return false;
   if (size === 0) return true;
   const probe = fs.openSync(file_path, 'r');
@@ -95,7 +115,8 @@ function looks_textual(file_path, size, ext) {
   }
 }
 
-function read_file(root_path, rel, limit) {
+// One existing file under root (never a folder) -> { rel, path, stat, ext }.
+function resolve_file(root_path, rel) {
   const root = path.resolve(root_path);
   const resolved = resolve_under(root, rel);
   if (!resolved) throw new Error('that path is outside the workspace');
@@ -103,11 +124,34 @@ function read_file(root_path, rel, limit) {
   const stat = entry_stat(resolved.path);
   if (!stat) throw new Error(`file not found: ${resolved.rel}`);
   if (stat.isDirectory()) throw new Error('that is a folder; open a file instead');
-  if (stat.size > TEXT_MAX_BYTES * 8) {
-    return { path: resolved.rel, truncated: true, too_large: true, size: stat.size, content: '' };
+  return { rel: resolved.rel, path: resolved.path, stat, ext: path.extname(resolved.path).toLowerCase() };
+}
+
+// kind: 'text' | 'image' | 'pdf' | 'video' | 'audio' | 'docx' | 'office' | 'binary' | 'too_large'.
+// Previewable kinds carry url (a file:// URL); text carries content.
+function read_file(root_path, rel, limit) {
+  const resolved = resolve_file(root_path, rel);
+  const stat = resolved.stat;
+  const preview = PREVIEW_KINDS[resolved.ext];
+  if (preview) {
+    return {
+      path: resolved.rel,
+      kind: preview,
+      url: pathToFileURL(resolved.path).href,
+      truncated: false,
+      binary: true,
+      size: stat.size,
+      content: '',
+    };
   }
-  if (!looks_textual(resolved.path, stat.size, path.extname(resolved.path).toLowerCase())) {
-    return { path: resolved.rel, truncated: false, binary: true, size: stat.size, content: '' };
+  if (OFFICE_EXTS.has(resolved.ext)) {
+    return { path: resolved.rel, kind: 'office', truncated: false, binary: true, size: stat.size, content: '' };
+  }
+  if (stat.size > TEXT_MAX_BYTES * 8) {
+    return { path: resolved.rel, kind: 'too_large', truncated: true, too_large: true, size: stat.size, content: '' };
+  }
+  if (!looks_textual(resolved.path, stat.size, resolved.ext)) {
+    return { path: resolved.rel, kind: 'binary', truncated: false, binary: true, size: stat.size, content: '' };
   }
   const handle = fs.openSync(resolved.path, 'r');
   try {
@@ -115,6 +159,7 @@ function read_file(root_path, rel, limit) {
     fs.readSync(handle, buf, 0, buf.length, 0);
     return {
       path: resolved.rel,
+      kind: 'text',
       truncated: stat.size > buf.length,
       binary: false,
       size: stat.size,
@@ -123,6 +168,29 @@ function read_file(root_path, rel, limit) {
   } finally {
     fs.closeSync(handle);
   }
+}
+
+// mammoth is loaded on first use, so the app starts without it.
+async function render_document(root_path, rel) {
+  const resolved = resolve_file(root_path, rel);
+  if (resolved.ext !== '.docx') throw new Error('only .docx documents can be previewed');
+  if (resolved.stat.size > DOCUMENT_MAX_BYTES) throw new Error('the document is too large to preview');
+  const mammoth = require('mammoth');
+  const result = await mammoth.convertToHtml({ path: resolved.path });
+  return { html: result.value, warnings: result.messages.length };
+}
+
+async function open_external(root_path, rel) {
+  const resolved = resolve_file(root_path, rel);
+  const failure = await shell.openPath(resolved.path);
+  if (failure) throw new Error(failure);
+  return true;
+}
+
+function reveal(root_path, rel) {
+  const resolved = resolve_file(root_path, rel);
+  shell.showItemInFolder(resolved.path);
+  return true;
 }
 
 // A dropped absolute path is only copied when the source exists; the copy keeps the top-level name
@@ -177,7 +245,10 @@ function copy_in(root_path, sources) {
 function register_file_ipc() {
   ipcMain.handle('files:list', (_event, root_path, rel) => list_dir(root_path, rel));
   ipcMain.handle('files:read', (_event, root_path, rel, limit) => read_file(root_path, rel, limit));
+  ipcMain.handle('files:render_document', (_event, root_path, rel) => render_document(root_path, rel));
+  ipcMain.handle('files:open_external', (_event, root_path, rel) => open_external(root_path, rel));
+  ipcMain.handle('files:reveal', (_event, root_path, rel) => reveal(root_path, rel));
   ipcMain.handle('files:copy_in', (_event, root_path, sources) => copy_in(root_path, sources));
 }
 
-module.exports = { register_file_ipc, list_dir, read_file, copy_in, resolve_under };
+module.exports = { register_file_ipc, list_dir, read_file, render_document, copy_in, resolve_under };

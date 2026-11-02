@@ -1,4 +1,4 @@
-﻿// Terminal grid: one view per workspace; sessions are xterm panes with a free (drag & resize) layout.
+﻿// Terminal grid: one view per workspace; sessions are xterm panes tiled in a split layout (no overlap).
 // Classic script (no import/export). Exposes window.init_terminal_grid(options).
 // Depends on the globals Terminal (xterm) and FitAddon.FitAddon, on window.hub (preload.js) and on
 // file_panel.js (window.init_file_panel) for the workspace file tree beside the sessions.
@@ -28,13 +28,14 @@
   const WORKTREE_NOTICE_MS = 8000;
   const AGENT_INSTALL_ID = 'install';
 
-  // Free pane layout. Rects are fractions {x, y, w, h} of the pane area; panes can be dragged
-  // anywhere and resized from their edges, so the old fixed CSS grid is gone.
-  // MIN_* keep panes usable; a pane is never dragged fully off screen.
-  const MIN_PANE_PX = 140; // smallest width or height for any pane
-  const MIN_PANE_WIDTH = MIN_PANE_PX;
-  const MIN_PANE_HEIGHT = MIN_PANE_PX;
-  const DRAG_VISIBLE_PX = 40; // at least this much of a pane stays inside while dragging
+  // Tiled pane layout (see "tiled layout" below). Sizes are in CSS pixels.
+  const MIN_PANE_PX = 120; // a divider never squeezes a pane below this
+  const PANE_GAP_PX = 6; // space between neighbouring panes
+  const DIVIDER_HIT_PX = 8; // grabbable width of a divider
+  const DRAG_START_PX = 5; // a title bar press becomes a move after this much travel
+  const DROP_EDGE_ZONE = 0.28; // closer than this (fraction of the pane) to an edge = split there
+  const RESIZE_DEBOUNCE_MS = 80; // pty resizes wait until a divider drag settles
+  const INTERNAL_PATH_TYPE = 'application/x-agentsense-path'; // file tree row drag (file_panel.js)
   const TERMINAL_OPTIONS = {
     fontFamily: '"Cascadia Mono", Consolas, monospace',
     fontSize: 13,
@@ -81,12 +82,6 @@
     if (class_name) node.className = class_name;
     if (text !== undefined) node.textContent = text;
     return node;
-  }
-
-  function columns_for_count(count) {
-    if (count <= 1) return 1;
-    if (count <= 4) return 2;
-    return 3;
   }
 
   function error_text(error) {
@@ -161,6 +156,10 @@
   function subscribe_hub_once() {
     if (hub_subscribed) return;
     hub_subscribed = true;
+    // A file dropped anywhere that does not handle it (sidebar, toolbar, gaps) must not make the window
+    // navigate to that file and lose the app.
+    document.addEventListener('dragover', (event) => event.preventDefault());
+    document.addEventListener('drop', (event) => event.preventDefault());
     window.hub.terminals.on_data((terminal_id, data) => {
       const pane = PANE_BY_TERMINAL.get(terminal_id);
       if (pane) pane.term.write(data);
@@ -442,7 +441,7 @@
       grid.dom.note.textContent = 'No terminals. Click + New session to start one.';
       return;
     }
-    grid.dom.note.textContent = `${count} terminal${count === 1 ? '' : 's'}. Drag to move panes; drag the edges to resize.`;
+    grid.dom.note.textContent = `${count} pane${count === 1 ? '' : 's'}. Drag a title onto another pane to move it, drag the gaps to resize, double-click a title to maximize.`;
   }
 
   function show_banner(grid, message) {
@@ -474,6 +473,10 @@
       pane_grid,
       hint,
       panes: [],
+      layout: null, // split tree, see "tiled layout"
+      zoomed: null, // the maximized pane, if any
+      dividers: [],
+      drop_indicator: null,
       attach_promise: null,
       ready: false,
       disposed: false,
@@ -591,7 +594,8 @@
     const element = pane.element;
     element.addEventListener('dragover', (event) => {
       if (!event.dataTransfer) return;
-      if (!Array.from(event.dataTransfer.types || []).includes('Files')) return;
+      const types = Array.from(event.dataTransfer.types || []);
+      if (!types.includes('Files') && !types.includes(INTERNAL_PATH_TYPE)) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'copy';
       element.classList.add('tg-drop-target');
@@ -602,12 +606,34 @@
     element.addEventListener('drop', (event) => {
       element.classList.remove('tg-drop-target');
       if (!event.dataTransfer) return;
+      const rel_path = event.dataTransfer.getData(INTERNAL_PATH_TYPE);
+      if (rel_path) {
+        event.preventDefault();
+        event.stopPropagation();
+        paste_workspace_path(grid, pane, rel_path);
+        return;
+      }
       const files_list = Array.from(event.dataTransfer.files || []);
       if (files_list.length === 0) return;
       event.preventDefault();
       event.stopPropagation();
       void drop_files_into_pane(grid, pane, files_list);
     });
+  }
+
+  // A row dragged from the Files panel: the file already lives in the workspace, so only its absolute path is pasted.
+  function paste_workspace_path(grid, pane, rel_path) {
+    const workspace = pane.view ? pane.view.workspace : null;
+    if (pane.kind === 'file' || !workspace || !workspace.path) return;
+    if (pane.status !== 'running' || !pane.terminal_id) {
+      show_banner(grid, 'The session is not running yet — wait for it to start, then drop again.');
+      return;
+    }
+    const root_abs = String(workspace.path);
+    const sep = root_abs.includes('\\') ? '\\' : '/';
+    const base = root_abs.endsWith(sep) ? root_abs : root_abs + sep;
+    window.hub.terminals.write(pane.terminal_id, `${quote_path(base + String(rel_path).split('/').join(sep))} `);
+    pane.term.focus();
   }
 
   async function drop_files_into_pane(grid, pane, files_list) {
@@ -663,12 +689,14 @@
       const sep = root_abs.includes('\\') ? '\\' : '/';
       const base = root_abs.endsWith(sep) ? root_abs : root_abs + sep;
       parts.push(...copied.map((r) => quote_path(base + r.name)));
+      if (pane.view.file_panel && typeof pane.view.file_panel.refresh === 'function') pane.view.file_panel.refresh();
       if (failed.length > 0) {
         show_banner(grid, `Copied ${copied.length}, failed ${failed.length}: ${failed.map((f) => `${f.name}: ${f.message}`).join('; ')}`);
       }
     }
     if (parts.length > 0 && pane.status === 'running' && pane.terminal_id) {
-      window.hub.terminals.write(pane.terminal_id, parts.join(' '));
+      window.hub.terminals.write(pane.terminal_id, `${parts.join(' ')} `);
+      pane.term.focus();
     }
   }
 
@@ -710,17 +738,6 @@
     const body = create_el('div', 'tg-pane-body');
     element.append(titlebar, body);
 
-    // Free-layout handles: right edge, bottom edge and the bottom-right corner resize the pane;
-    // the titlebar moves it (attach_pane_drag).
-    const resize = {};
-    const resize_e = create_el('div', 'tg-handle tg-handle-e');
-    const resize_s = create_el('div', 'tg-handle tg-handle-s');
-    const resize_se = create_el('div', 'tg-handle tg-handle-se');
-    element.append(resize_e, resize_s, resize_se);
-    resize.e = resize_e;
-    resize.s = resize_s;
-    resize.se = resize_se;
-
     const term = new window.Terminal(Object.assign({}, TERMINAL_OPTIONS));
     const fit = new window.FitAddon.FitAddon();
     term.loadAddon(fit);
@@ -740,9 +757,7 @@
       worktree: spec.worktree || null,
       element,
       titlebar,
-      resize,
-      rect: null, // filled by place_pane; null = uniform tiling slot for the current count
-      dirty_layout: false, // true once the user moved or resized this pane by hand
+      rect: null, // filled by relayout_view from the view's split tree
       dot,
       restart_btn,
       body,
@@ -753,6 +768,7 @@
       exit_code: null,
       observer: null,
       refit_frame: 0,
+      resize_timer: 0,
       disposed: false,
     };
 
@@ -764,9 +780,14 @@
     term.onResize(({ cols, rows }) => {
       element.setAttribute('data-cols', String(cols));
       element.setAttribute('data-rows', String(rows));
-      if (pane.status === 'running' && pane.terminal_id) {
-        window.hub.terminals.resize(pane.terminal_id, cols, rows);
-      }
+      // Dragging a divider refits every frame; ConPTY only needs the size it settles on.
+      if (pane.resize_timer) window.clearTimeout(pane.resize_timer);
+      pane.resize_timer = window.setTimeout(() => {
+        pane.resize_timer = 0;
+        if (pane.status === 'running' && pane.terminal_id && !pane.disposed) {
+          window.hub.terminals.resize(pane.terminal_id, pane.term.cols, pane.term.rows);
+        }
+      }, RESIZE_DEBOUNCE_MS);
     });
     attach_terminal_input(pane);
     attach_drop_to_pane(grid, pane);
@@ -779,16 +800,7 @@
       close_pane(grid, pane);
     });
     element.addEventListener('mousedown', () => set_active_pane(grid, pane), true);
-    element.addEventListener('mousedown', () => {
-      // Focused panes float above the ones behind them.
-      pane_serial += 1;
-      pane.z = pane_serial;
-      element.style.zIndex = String(pane.z % 100000);
-    }, true);
-    attach_pane_drag(pane);
-    attach_pane_resize(pane, 'e');
-    attach_pane_resize(pane, 's');
-    attach_pane_resize(pane, 'se');
+    attach_pane_rearrange(grid, pane);
 
     pane.observer = new ResizeObserver(() => schedule_refit(pane));
     pane.observer.observe(body);
@@ -866,6 +878,8 @@
   }
 
   function mount_pane(grid, view, pane) {
+    view.zoomed = null;
+    insert_into_layout(view, pane);
     view.panes.push(pane);
     view.pane_grid.appendChild(pane.element);
     relayout_view(grid, view);
@@ -874,8 +888,10 @@
   }
 
   // ---- file viewer panes ----
-  // A read-only pane that shows one workspace file. It has no terminal: close removes it, drag/resize
-  // work like terminal panes (same handle logic), and it never counts as a running session.
+  // A read-only pane that shows one workspace file. It has no terminal: close removes it, it tiles and
+  // moves like a terminal pane, and it never counts as a running session.
+  // Text shows as text; images, PDF, audio/video and .docx get a real preview; anything else offers
+  // "Open" (default app) and "Reveal" (File Explorer).
 
   function format_byte_size(bytes) {
     if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -889,21 +905,24 @@
     const icon = create_el('span', 'tg-dot tf-dot');
     icon.title = 'File';
     const name_el = create_el('span', 'tg-pane-title', spec.name);
-    name_el.title = spec.name;
+    name_el.title = spec.path;
+    // The folder part only (the name is already shown); empty for files at the workspace root.
+    const folder = spec.path.includes('/') ? spec.path.slice(0, spec.path.lastIndexOf('/')) : '';
+    const path_el = create_el('span', 'tg-pane-agent', folder);
+    path_el.title = spec.path;
+    const open_btn = create_el('button', 'tg-restart tf-action', 'Open');
+    open_btn.type = 'button';
+    open_btn.title = 'Open with the default app';
+    const reveal_btn = create_el('button', 'tg-restart tf-action', 'Reveal');
+    reveal_btn.type = 'button';
+    reveal_btn.title = 'Show in File Explorer';
     const close_btn = create_el('button', 'tg-close', 'x');
     close_btn.type = 'button';
     close_btn.title = 'Close file';
-    titlebar.append(icon, name_el, close_btn);
+    titlebar.append(icon, name_el, path_el, open_btn, reveal_btn, close_btn);
     const body = create_el('div', 'tf-body');
     body.textContent = 'Loading…';
-    const resize = {};
-    const resize_e = create_el('div', 'tg-handle tg-handle-e');
-    const resize_s = create_el('div', 'tg-handle tg-handle-s');
-    const resize_se = create_el('div', 'tg-handle tg-handle-se');
-    element.append(titlebar, body, resize_e, resize_s, resize_se);
-    resize.e = resize_e;
-    resize.s = resize_s;
-    resize.se = resize_se;
+    element.append(titlebar, body);
 
     pane_serial += 1;
     const pane = {
@@ -915,9 +934,7 @@
       path: spec.path,
       element,
       titlebar,
-      resize,
       rect: null,
-      dirty_layout: false,
       body,
       close_btn,
       terminal_id: null,
@@ -933,53 +950,113 @@
       remove_pane(grid, pane);
       notify_grid(grid);
     });
+    open_btn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      open_file_externally(grid, pane, 'open_external');
+    });
+    reveal_btn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      open_file_externally(grid, pane, 'reveal');
+    });
     element.addEventListener('mousedown', () => set_active_pane(grid, pane), true);
-    element.addEventListener('mousedown', () => {
-      pane_serial += 1;
-      pane.z = pane_serial;
-      element.style.zIndex = String(pane.z % 100000);
-    }, true);
-    attach_pane_drag(pane);
-    attach_pane_resize(pane, 'e');
-    attach_pane_resize(pane, 's');
-    attach_pane_resize(pane, 'se');
-    pane.observer = new ResizeObserver(() => schedule_refit(pane));
-    pane.observer.observe(body);
+    attach_pane_rearrange(grid, pane);
     return pane;
   }
 
+  async function open_file_externally(grid, pane, action) {
+    try {
+      await window.hub.files[action](pane.view.workspace.path, pane.path);
+    } catch (error) {
+      show_banner(grid, `Could not open ${pane.name}: ${error_text(error)}`);
+    }
+  }
+
   function mount_file_pane(grid, view, pane) {
+    insert_into_layout(view, pane);
     view.panes.push(pane);
     view.pane_grid.appendChild(pane.element);
     relayout_view(grid, view);
-    load_file_content(pane);
+    load_file_content(grid, pane);
   }
 
-  async function load_file_content(pane) {
+  function file_unsupported(grid, pane, message) {
+    const box = create_el('div', 'tf-unsupported');
+    box.append(create_el('div', 'tf-unsupported-text', message));
+    const open_btn = create_el('button', 'tg-btn tg-btn-primary', 'Open with default app');
+    open_btn.type = 'button';
+    open_btn.addEventListener('click', () => open_file_externally(grid, pane, 'open_external'));
+    box.append(open_btn);
+    return box;
+  }
+
+  // A .docx converted to HTML in the main process; shown in a script-less sandboxed frame like a paper page.
+  function document_frame(html) {
+    const frame = create_el('iframe', 'tf-frame tf-doc');
+    frame.setAttribute('sandbox', '');
+    frame.srcdoc =
+      '<!doctype html><meta charset="utf-8"><style>' +
+      'html{background:#3a3a3e}body{box-sizing:border-box;max-width:820px;margin:12px auto;padding:clamp(16px,6vw,56px);' +
+      'background:#fff;color:#1d1d1f;font:14px/1.6 "Segoe UI",Calibri,sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.4)}' +
+      'img{max-width:100%;height:auto}table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #bbb;padding:4px 8px}' +
+      'h1,h2,h3{line-height:1.25}a{color:#0b62c4}</style>' +
+      html;
+    return frame;
+  }
+
+  async function load_file_content(grid, pane) {
     const view = pane.view;
+    const root_path = view.workspace.path;
     try {
-      const result = await window.hub.files.read(view.workspace.path, pane.path);
+      const result = await window.hub.files.read(root_path, pane.path);
       if (pane.disposed) return;
       pane.body.textContent = '';
       const meta = create_el('div', 'tf-meta');
       const size = format_byte_size(result.size != null ? result.size : 0);
-      if (result.binary === false) {
-        meta.textContent = `${size}${result.truncated ? ' (truncated)' : ''}`;
-        pane.body.append(meta);
+      const kind = result.kind || (result.binary ? 'binary' : 'text');
+      meta.textContent = size;
+      if (kind === 'text') {
+        if (result.truncated) meta.textContent = `${size} (showing the first part)`;
         const text = create_el('div', 'tf-text');
         text.textContent = String(result.content || '');
-        pane.body.append(text);
-      } else {
-        meta.textContent = result.too_large
-          ? `File too large to preview (${size})`
-          : `${pane.name || 'This file'} — binary (preview skipped, ${size})`;
+        pane.body.append(meta, text);
+      } else if (kind === 'image') {
+        const media = create_el('div', 'tf-media');
+        const image = create_el('img', 'tf-image');
+        image.alt = pane.name;
+        image.src = result.url;
+        image.addEventListener('load', () => {
+          meta.textContent = `${size} · ${image.naturalWidth} × ${image.naturalHeight}`;
+        });
+        media.append(image);
+        pane.body.append(meta, media);
+      } else if (kind === 'pdf') {
+        const frame = create_el('iframe', 'tf-frame');
+        frame.src = result.url;
+        pane.body.append(frame);
+      } else if (kind === 'video' || kind === 'audio') {
+        const media = create_el('div', 'tf-media');
+        const player = create_el(kind, `tf-${kind}`);
+        player.controls = true;
+        player.src = result.url;
+        media.append(player);
+        pane.body.append(meta, media);
+      } else if (kind === 'docx') {
+        meta.textContent = `${size} · converting document…`;
         pane.body.append(meta);
+        const rendered = await window.hub.files.render_document(root_path, pane.path);
+        if (pane.disposed) return;
+        meta.textContent = `${size} · Word document (preview; layout is simplified)`;
+        pane.body.append(document_frame(String(rendered.html || '')));
+      } else if (kind === 'too_large') {
+        pane.body.append(meta, file_unsupported(grid, pane, `This file is too large to preview (${size}).`));
+      } else {
+        const what = kind === 'office' ? 'This Office file has no built-in preview' : 'This is a binary file';
+        pane.body.append(meta, file_unsupported(grid, pane, `${what} (${size}).`));
       }
     } catch (error) {
       if (pane.disposed) return;
       pane.body.textContent = '';
-      const text = create_el('div', 'tf-text tf-error', `Could not read file: ${error_text(error)}`);
-      pane.body.append(text);
+      pane.body.append(file_unsupported(grid, pane, `Could not preview this file: ${error_text(error)}`));
     }
   }
 
@@ -991,6 +1068,10 @@
       (pane) => pane.kind === 'file' && !pane.disposed && pane.path === rel_path
     );
     if (existing) {
+      if (view.zoomed && view.zoomed !== existing) {
+        view.zoomed = null;
+        relayout_view(grid, view);
+      }
       set_active_pane(grid, existing);
       return;
     }
@@ -999,11 +1080,149 @@
     set_active_pane(grid, pane);
   }
 
-  // Free pane layout (replaces the old CSS grid). Each pane keeps rect = {x, y, w, h} as fractions of
-  // the pane area. rect === null means "not placed yet": such panes get a slot from the uniform tiling
-  // for the current count (the old behaviour) the next time they are placed.
+  // ---- tiled layout ----
+  // Panes tile the pane area like split editors, so they never overlap. view.layout is a split tree:
+  //   leaf:  { type: 'leaf', pane }
+  //   split: { type: 'split', dir: 'row' | 'column', children: [node, ...], sizes: [fractions summing to 1] }
+  // A new pane splits the largest pane along its longer side. Dividers between siblings resize them.
+  // Dragging a title bar onto another pane moves it there: near an edge it splits beside that pane,
+  // in the middle the two swap places. Double-clicking a title bar maximizes the pane (and back).
+  // pane.rect is the computed {x, y, w, h} as fractions of the pane area.
+
+  const FULL_RECT = { x: 0, y: 0, w: 1, h: 1 };
+
+  // -> { leaf, parent, index, grand, grand_index } for the leaf that holds pane, or null.
+  function locate_leaf(node, pane, parent, index, grand, grand_index) {
+    if (!node) return null;
+    if (node.type === 'leaf') {
+      return node.pane === pane ? { leaf: node, parent, index, grand, grand_index } : null;
+    }
+    for (let i = 0; i < node.children.length; i += 1) {
+      const found = locate_leaf(node.children[i], pane, node, i, parent, index);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function replace_child(view, parent, index, node) {
+    if (parent) parent.children[index] = node;
+    else view.layout = node;
+  }
+
+  function area_size(view) {
+    const width = view.pane_grid.clientWidth;
+    const height = view.pane_grid.clientHeight;
+    // A hidden view measures 0x0; assume a typical landscape window then.
+    return width > 0 && height > 0 ? { width, height } : { width: 1600, height: 900 };
+  }
+
+  function largest_pane(view) {
+    let best = null;
+    let best_area = -1;
+    for (const pane of view.panes) {
+      if (pane.disposed || !pane.rect) continue;
+      const area = pane.rect.w * pane.rect.h;
+      if (area > best_area + 1e-6) {
+        best = pane;
+        best_area = area;
+      }
+    }
+    return best;
+  }
+
+  // Puts pane into the layout. With a target it goes on that side of it ('left' | 'right' | 'top' | 'bottom');
+  // without one it splits the largest pane: side by side when that pane is wide, stacked when it is tall.
+  function insert_into_layout(view, pane, target, side) {
+    const leaf = { type: 'leaf', pane };
+    if (!view.layout) {
+      view.layout = leaf;
+      return;
+    }
+    let anchor = target || largest_pane(view);
+    let found = anchor ? locate_leaf(view.layout, anchor, null, 0, null, 0) : null;
+    if (!found) {
+      // Nothing measured yet: split the first leaf.
+      let node = view.layout;
+      while (node.type !== 'leaf') node = node.children[0];
+      anchor = node.pane;
+      found = locate_leaf(view.layout, anchor, null, 0, null, 0);
+    }
+    if (!side) {
+      const size = area_size(view);
+      const rect = anchor.rect || FULL_RECT;
+      // Terminal cells are tall, so a pane must be clearly wider than high before it splits sideways.
+      side = rect.w * size.width >= rect.h * size.height * 1.1 ? 'right' : 'bottom';
+    }
+    const dir = side === 'left' || side === 'right' ? 'row' : 'column';
+    const before = side === 'left' || side === 'top';
+    const { parent, index } = found;
+    if (parent && parent.dir === dir) {
+      const half = parent.sizes[index] / 2;
+      parent.sizes[index] = half;
+      const at = before ? index : index + 1;
+      parent.children.splice(at, 0, leaf);
+      parent.sizes.splice(at, 0, half);
+      return;
+    }
+    const split = {
+      type: 'split',
+      dir,
+      children: before ? [leaf, found.leaf] : [found.leaf, leaf],
+      sizes: [0.5, 0.5],
+    };
+    replace_child(view, parent, index, split);
+  }
+
+  // Takes pane out of the layout; its space goes to the neighbour before it (or after, when it was first).
+  function remove_from_layout(view, pane) {
+    const found = locate_leaf(view.layout, pane, null, 0, null, 0);
+    if (!found) return;
+    const { parent, index, grand, grand_index } = found;
+    if (!parent) {
+      view.layout = null;
+      return;
+    }
+    const freed = parent.sizes[index];
+    parent.children.splice(index, 1);
+    parent.sizes.splice(index, 1);
+    parent.sizes[Math.max(0, index - 1)] += freed;
+    if (parent.children.length > 1) return;
+    // One child left: the split disappears. A child split in the grandparent's direction merges into it.
+    const only = parent.children[0];
+    if (grand && only.type === 'split' && only.dir === grand.dir) {
+      const share = grand.sizes[grand_index];
+      grand.children.splice(grand_index, 1, ...only.children);
+      grand.sizes.splice(grand_index, 1, ...only.sizes.map((size) => size * share));
+      return;
+    }
+    replace_child(view, grand, grand_index, only);
+  }
+
+  // Fills pane.rect for every leaf and collects the dividers between siblings.
+  function compute_layout(node, rect, dividers) {
+    if (node.type === 'leaf') {
+      node.pane.rect = rect;
+      return;
+    }
+    let offset = 0;
+    node.children.forEach((child, i) => {
+      const size = node.sizes[i];
+      const child_rect =
+        node.dir === 'row'
+          ? { x: rect.x + offset * rect.w, y: rect.y, w: size * rect.w, h: rect.h }
+          : { x: rect.x, y: rect.y + offset * rect.h, w: rect.w, h: size * rect.h };
+      compute_layout(child, child_rect, dividers);
+      offset += size;
+      if (i < node.children.length - 1) dividers.push({ split: node, index: i, rect, offset });
+    });
+  }
+
   function relayout_view(grid, view) {
+    if (view.zoomed && (view.zoomed.disposed || !view.panes.includes(view.zoomed))) view.zoomed = null;
+    const dividers = [];
+    if (view.layout) compute_layout(view.layout, FULL_RECT, dividers);
     for (const pane of view.panes) place_pane(pane, view);
+    render_dividers(grid, view, view.zoomed ? [] : dividers);
     view.hint.hidden = count_panes(view) > 0;
     if (grid.active_view === view) update_note(grid);
   }
@@ -1016,157 +1235,208 @@
     return counted;
   }
 
-  function columns_for_count(count) {
-    if (count <= 1) return 1;
-    if (count <= 4) return 2;
-    return 3;
-  }
-
-  // Uniform tiling for `count` panes: same slots as the old CSS grid (1 column / 2 / 3 by count).
-  function rect_for_slot(index, count) {
-    const columns = columns_for_count(count);
-    const rows = Math.ceil(count / columns);
-    return {
-      x: (index % columns) / columns,
-      y: Math.floor(index / columns) / rows,
-      w: 1 / columns,
-      h: 1 / rows,
-    };
-  }
-
   function place_pane(pane, view) {
-    const area = view.pane_grid;
-    const width = Math.max(area.clientWidth, 1);
-    const height = Math.max(area.clientHeight, 1);
-    if (!pane.rect) {
-      const index = view.panes.indexOf(pane);
-      pane.rect = rect_for_slot(index, view.panes.length);
-      // Keep the minimum size even in tiny windows.
-      pane.rect.w = Math.max(pane.rect.w, Math.min(1, MIN_PANE_PX / width));
-      pane.rect.h = Math.max(pane.rect.h, Math.min(1, MIN_PANE_PX / height));
-    }
+    const zoomed = view.zoomed;
+    const rect = zoomed === pane ? FULL_RECT : pane.rect || FULL_RECT;
     const element = pane.element;
-    element.style.left = `${pane.rect.x * 100}%`;
-    element.style.top = `${pane.rect.y * 100}%`;
-    element.style.width = `${pane.rect.w * 100}%`;
-    element.style.height = `${pane.rect.h * 100}%`;
-    element.style.zIndex = String((pane.z || pane.pane_id) % 100000);
+    const half_gap = PANE_GAP_PX / 2;
+    element.hidden = Boolean(zoomed && zoomed !== pane);
+    element.classList.toggle('tg-zoomed', zoomed === pane);
+    element.style.left = `calc(${rect.x * 100}% + ${half_gap}px)`;
+    element.style.top = `calc(${rect.y * 100}% + ${half_gap}px)`;
+    element.style.width = `calc(${rect.w * 100}% - ${PANE_GAP_PX}px)`;
+    element.style.height = `calc(${rect.h * 100}% - ${PANE_GAP_PX}px)`;
   }
 
-  // Clamp helpers: a pane stays inside the pane area and never smaller than MIN_PANE_PX.
-  function clamp_rect(rect, area_width, area_height) {
-    const min_w = Math.min(1, MIN_PANE_PX / Math.max(area_width, 1));
-    const min_h = Math.min(1, MIN_PANE_PX / Math.max(area_height, 1));
-    const w = Math.min(Math.max(rect.w, min_w), 1);
-    const h = Math.min(Math.max(rect.h, min_h), 1);
-    const max_x = Math.max(0, 1 - w);
-    const max_y = Math.max(0, 1 - h);
-    const x = Math.min(Math.max(rect.x, 0), max_x);
-    const y = Math.min(Math.max(rect.y, 0), max_y);
-    return { x, y, w, h };
+  // Divider elements are reused by position, so the one being dragged keeps its pointer capture
+  // while the layout is recomputed under it.
+  function render_dividers(grid, view, dividers) {
+    if (!view.dividers) view.dividers = [];
+    while (view.dividers.length > dividers.length) view.dividers.pop().remove();
+    while (view.dividers.length < dividers.length) {
+      const element = create_el('div', 'tg-divider');
+      element.addEventListener('pointerdown', (event) => start_divider_drag(grid, view, element, event));
+      view.pane_grid.appendChild(element);
+      view.dividers.push(element);
+    }
+    dividers.forEach((info, i) => {
+      const element = view.dividers[i];
+      element.divider = info;
+      const { rect, offset, split } = info;
+      const row = split.dir === 'row';
+      element.classList.toggle('tg-divider-row', row);
+      element.classList.toggle('tg-divider-column', !row);
+      if (row) {
+        element.style.left = `calc(${(rect.x + offset * rect.w) * 100}% - ${DIVIDER_HIT_PX / 2}px)`;
+        element.style.top = `${rect.y * 100}%`;
+        element.style.width = `${DIVIDER_HIT_PX}px`;
+        element.style.height = `${rect.h * 100}%`;
+      } else {
+        element.style.left = `${rect.x * 100}%`;
+        element.style.top = `calc(${(rect.y + offset * rect.h) * 100}% - ${DIVIDER_HIT_PX / 2}px)`;
+        element.style.width = `${rect.w * 100}%`;
+        element.style.height = `${DIVIDER_HIT_PX}px`;
+      }
+    });
   }
 
-  function clamp_drag_rect(rect, area_width, area_height) {
-    // While dragging, the pane head must stay grabbable: keep part of it inside the area.
-    const keep_w = Math.min(rect.w, Math.min(1, DRAG_VISIBLE_PX / Math.max(area_width, 1)));
-    const keep_h = Math.min(rect.h, Math.min(1, DRAG_VISIBLE_PX / Math.max(area_height, 1)));
-    const min_x = -(rect.w - keep_w);
-    const min_y = -(rect.h - keep_h);
-    const x = Math.min(Math.max(rect.x, min_x), 1 - keep_w);
-    const y = Math.min(Math.max(rect.y, min_y), 1 - keep_h);
-    return { x, y, w: rect.w, h: rect.h };
+  function start_divider_drag(grid, view, element, event) {
+    const info = element.divider;
+    if (!info || event.button !== 0) return;
+    event.preventDefault();
+    const { split, index, rect } = info;
+    const row = split.dir === 'row';
+    const size = area_size(view);
+    const span_px = Math.max(1, row ? rect.w * size.width : rect.h * size.height);
+    const start_pos = row ? event.clientX : event.clientY;
+    const first = split.sizes[index];
+    const pair = first + split.sizes[index + 1];
+    const min = Math.min(pair / 2, MIN_PANE_PX / span_px);
+    element.setPointerCapture(event.pointerId);
+    element.classList.add('tg-divider-active');
+    view.root.classList.add(row ? 'tg-resizing-row' : 'tg-resizing-column');
+
+    const on_move = (move_event) => {
+      const delta = ((row ? move_event.clientX : move_event.clientY) - start_pos) / span_px;
+      const next = Math.min(pair - min, Math.max(min, first + delta));
+      split.sizes[index] = next;
+      split.sizes[index + 1] = pair - next;
+      relayout_view(grid, view);
+    };
+    const on_end = () => {
+      element.removeEventListener('pointermove', on_move);
+      element.removeEventListener('pointerup', on_end);
+      element.removeEventListener('pointercancel', on_end);
+      element.classList.remove('tg-divider-active');
+      view.root.classList.remove('tg-resizing-row', 'tg-resizing-column');
+    };
+    element.addEventListener('pointermove', on_move);
+    element.addEventListener('pointerup', on_end);
+    element.addEventListener('pointercancel', on_end);
   }
 
-  //Moving a pane: pointer down on the titlebar (not on a button), then follow the pointer.
-  function attach_pane_drag(pane) {
+  // Which pane (other than the dragged one) is under the pointer, and where: an edge or the centre.
+  function find_drop_spot(view, dragged, client_x, client_y) {
+    const area = view.pane_grid.getBoundingClientRect();
+    for (const pane of view.panes) {
+      if (pane === dragged || pane.disposed || !pane.rect) continue;
+      const left = area.left + pane.rect.x * area.width;
+      const top = area.top + pane.rect.y * area.height;
+      const width = pane.rect.w * area.width;
+      const height = pane.rect.h * area.height;
+      if (client_x < left || client_x > left + width || client_y < top || client_y > top + height) continue;
+      const rx = (client_x - left) / width;
+      const ry = (client_y - top) / height;
+      const edges = [
+        ['left', rx],
+        ['right', 1 - rx],
+        ['top', ry],
+        ['bottom', 1 - ry],
+      ];
+      edges.sort((a, b) => a[1] - b[1]);
+      const zone = edges[0][1] < DROP_EDGE_ZONE ? edges[0][0] : 'center';
+      return { target: pane, zone };
+    }
+    return null;
+  }
+
+  function show_drop_indicator(view, spot) {
+    if (!view.drop_indicator) {
+      view.drop_indicator = create_el('div', 'tg-drop-indicator');
+      view.pane_grid.appendChild(view.drop_indicator);
+    }
+    const indicator = view.drop_indicator;
+    if (!spot) {
+      indicator.hidden = true;
+      return;
+    }
+    const rect = Object.assign({}, spot.target.rect);
+    if (spot.zone === 'left' || spot.zone === 'right') {
+      rect.w /= 2;
+      if (spot.zone === 'right') rect.x += rect.w;
+    } else if (spot.zone === 'top' || spot.zone === 'bottom') {
+      rect.h /= 2;
+      if (spot.zone === 'bottom') rect.y += rect.h;
+    }
+    indicator.hidden = false;
+    indicator.classList.toggle('tg-drop-swap', spot.zone === 'center');
+    indicator.style.left = `calc(${rect.x * 100}% + ${PANE_GAP_PX / 2}px)`;
+    indicator.style.top = `calc(${rect.y * 100}% + ${PANE_GAP_PX / 2}px)`;
+    indicator.style.width = `calc(${rect.w * 100}% - ${PANE_GAP_PX}px)`;
+    indicator.style.height = `calc(${rect.h * 100}% - ${PANE_GAP_PX}px)`;
+  }
+
+  function move_pane(grid, view, pane, spot) {
+    if (spot.zone === 'center') {
+      const a = locate_leaf(view.layout, pane, null, 0, null, 0);
+      const b = locate_leaf(view.layout, spot.target, null, 0, null, 0);
+      if (!a || !b) return;
+      a.leaf.pane = spot.target;
+      b.leaf.pane = pane;
+    } else {
+      remove_from_layout(view, pane);
+      insert_into_layout(view, pane, spot.target, spot.zone);
+    }
+    relayout_view(grid, view);
+  }
+
+  function toggle_zoom(grid, pane) {
+    const view = pane.view;
+    view.zoomed = view.zoomed === pane ? null : pane;
+    relayout_view(grid, view);
+    set_active_pane(grid, pane);
+    if (pane.term) pane.term.focus();
+  }
+
+  // Title bar: drag onto another pane to move it there; double-click to maximize or restore.
+  // Listeners for one drag live only for that drag (pointer capture), so nothing piles up on window.
+  function attach_pane_rearrange(grid, pane) {
     const handle = pane.titlebar;
-    let started = false;
-    let start = null;
-    let area_rect = null;
-
     handle.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
       if (event.target && event.target.closest && event.target.closest('button')) return;
-      started = true;
-      const area = pane.view.pane_grid.getBoundingClientRect();
-      area_rect = area;
-      start = { px: event.clientX, py: event.clientY, rect: Object.assign({}, pane.rect) };
-      pane.element.classList.add('tg-dragging');
-      event.preventDefault();
-    });
+      const view = pane.view;
+      const start_x = event.clientX;
+      const start_y = event.clientY;
+      let dragging = false;
+      let spot = null;
+      handle.setPointerCapture(event.pointerId);
 
-    window.addEventListener(
-      'pointermove',
-      (event) => {
-        if (!started) return;
-        const width = Math.max(area_rect.width, MIN_PANE_WIDTH);
-        const height = Math.max(area_rect.height, MIN_PANE_HEIGHT);
-        const dx = (event.clientX - start.px) / width;
-        const dy = (event.clientY - start.py) / height;
-        pane.rect = clamp_drag_rect(
-          { x: start.rect.x + dx, y: start.rect.y + dy, w: start.rect.w, h: start.rect.h },
-          width,
-          height
-        );
-        pane.dirty_layout = true;
-        place_pane(pane, pane.view);
-      },
-      { passive: true }
-    );
-
-    window.addEventListener('pointerup', () => {
-      if (!started) return;
-      started = false;
-      pane.element.classList.remove('tg-dragging');
-    });
-  }
-
-  //Resizing: thin handles on the right edge (e), bottom edge (s) and bottom-right corner (se).
-  function attach_pane_resize(pane, mode) {
-    const handle = pane.resize[mode];
-    let started = false;
-    let start = null;
-    let area_rect = null;
-
-    handle.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      started = true;
-      area_rect = pane.view.pane_grid.getBoundingClientRect();
-      start = { px: event.clientX, py: event.clientY, rect: Object.assign({}, pane.rect) };
-      pane.element.classList.add('tg-resizing');
-    });
-
-    window.addEventListener(
-      'pointermove',
-      (event) => {
-        if (!started) return;
-        const width = Math.max(area_rect.width, MIN_PANE_WIDTH);
-        const height = Math.max(area_rect.height, MIN_PANE_HEIGHT);
-        const next = Object.assign({}, start.rect);
-        if (mode === 'e' || mode === 'se') {
-          next.w = start.rect.w + (event.clientX - start.px) / width;
+      const on_move = (move_event) => {
+        if (!dragging) {
+          const moved = Math.hypot(move_event.clientX - start_x, move_event.clientY - start_y);
+          if (moved < DRAG_START_PX || view.zoomed || count_panes(view) < 2) return;
+          dragging = true;
+          pane.element.classList.add('tg-dragging');
+          view.root.classList.add('tg-rearranging');
         }
-        if (mode === 's' || mode === 'se') {
-          next.h = start.rect.h + (event.clientY - start.py) / height;
+        spot = find_drop_spot(view, pane, move_event.clientX, move_event.clientY);
+        show_drop_indicator(view, spot);
+      };
+      const on_end = (end_event) => {
+        handle.removeEventListener('pointermove', on_move);
+        handle.removeEventListener('pointerup', on_end);
+        handle.removeEventListener('pointercancel', on_end);
+        if (!dragging) return;
+        pane.element.classList.remove('tg-dragging');
+        view.root.classList.remove('tg-rearranging');
+        show_drop_indicator(view, null);
+        if (spot && end_event.type === 'pointerup' && !pane.disposed && !spot.target.disposed) {
+          move_pane(grid, view, pane, spot);
         }
-        pane.rect = clamp_rect(next, width, height);
-        pane.dirty_layout = true;
-        place_pane(pane, pane.view);
-      },
-      { passive: true }
-    );
-
-    window.addEventListener('pointerup', () => {
-      if (!started) return;
-      started = false;
-      pane.element.classList.remove('tg-resizing');
+      };
+      handle.addEventListener('pointermove', on_move);
+      handle.addEventListener('pointerup', on_end);
+      handle.addEventListener('pointercancel', on_end);
+    });
+    handle.addEventListener('dblclick', (event) => {
+      if (event.target && event.target.closest && event.target.closest('button')) return;
+      toggle_zoom(grid, pane);
     });
   }
 
   function refit_pane(pane) {
-    if (pane.disposed) return;
+    if (pane.disposed || !pane.fit) return;
     if (pane.body.clientWidth === 0 || pane.body.clientHeight === 0) return;
     try {
       pane.fit.fit();
@@ -1181,7 +1451,7 @@
   function refit_view(view) {
     for (const pane of view.panes) {
       refit_pane(pane);
-      if (!pane.disposed) pane.term.refresh(0, Math.max(0, pane.term.rows - 1));
+      if (!pane.disposed && pane.term) pane.term.refresh(0, Math.max(0, pane.term.rows - 1));
     }
   }
 
@@ -1258,9 +1528,11 @@
       PANE_BY_TERMINAL.delete(pane.terminal_id);
     }
     if (pane.refit_frame) window.cancelAnimationFrame(pane.refit_frame);
+    if (pane.resize_timer) window.clearTimeout(pane.resize_timer);
     if (pane.observer) pane.observer.disconnect();
     if (pane.term) pane.term.dispose();
     pane.element.remove();
+    remove_from_layout(view, pane);
     if (grid.active_pane === pane) grid.active_pane = null;
     relayout_view(grid, view);
   }

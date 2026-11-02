@@ -68,6 +68,9 @@ contextBridge.exposeInMainWorld('hub', {
   files: {
     list: (root_path, rel) => ipcRenderer.invoke('files:list', root_path, rel),
     read: (root_path, rel) => ipcRenderer.invoke('files:read', root_path, rel),
+    render_document: (root_path, rel) => ipcRenderer.invoke('files:render_document', root_path, rel),
+    open_external: (root_path, rel) => ipcRenderer.invoke('files:open_external', root_path, rel),
+    reveal: (root_path, rel) => ipcRenderer.invoke('files:reveal', root_path, rel),
     copy_in: (root_path, sources) => ipcRenderer.invoke('files:copy_in', root_path, sources),
     path_for_file: (file) => {
       try {
