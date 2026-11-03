@@ -76,7 +76,7 @@ contextBridge.exposeInMainWorld('hub', {
     copy_in: (root_path, sources) => ipcRenderer.invoke('files:copy_in', root_path, sources),
     cancel_copy: (job_id) => ipcRenderer.invoke('files:cancel_copy', job_id),
     import_mapped: (root_path, source_path, rel) => ipcRenderer.invoke('files:import_mapped', root_path, source_path, rel),
-    write: (root_path, rel, content, expected_mtime) => ipcRenderer.invoke('files:write', root_path, rel, content, expected_mtime),
+    write: (root_path, rel, content, expected_mtime, loaded_bytes) => ipcRenderer.invoke('files:write', root_path, rel, content, expected_mtime, loaded_bytes),
     search: (root_path, query) => ipcRenderer.invoke('files:search', root_path, query),
     watch: (root_path) => ipcRenderer.invoke('files:watch', root_path),
     unwatch: (root_path) => ipcRenderer.invoke('files:unwatch', root_path),

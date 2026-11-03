@@ -136,6 +136,9 @@ function read_stored(file_path) {
 }
 
 function write_stored(file_path, providers) {
+  if (providers.some((item) => item.pending_plain)) {
+    throw new Error('OS secret storage is unavailable; provider secrets were left unchanged');
+  }
   fs.mkdirSync(path.dirname(file_path), { recursive: true });
   const payload = { version: 2, providers: providers.map(to_disk) };
   const serialized = JSON.stringify(payload, null, 2);
@@ -197,9 +200,13 @@ function save_provider(provider) {
     const current = state[index];
     let api_key_enc = current.api_key_enc;
     let secret_status = current.secret_status;
+    let pending_plain = current.pending_plain || '';
     if (incoming !== '') {
       api_key_enc = seal_key(incoming);
       secret_status = 'sealed';
+      pending_plain = '';
+    } else if (pending_plain) {
+      throw new Error('OS secret storage is unavailable; the existing API key was kept');
     }
     state[index] = {
       ...current,
@@ -209,7 +216,7 @@ function save_provider(provider) {
       models,
       api_key_enc,
       secret_status,
-      pending_plain: '',
+      pending_plain,
     };
     write_stored(file_path, state);
     return public_provider(state[index]);

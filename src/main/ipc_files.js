@@ -11,6 +11,7 @@ function electron_bits() {
 const { resolve_inside } = require('./path_guard');
 
 const TEXT_MAX_BYTES = 1024 * 512;
+const EDIT_MAX_BYTES = TEXT_MAX_BYTES * 8;
 const COPY_MAX_NAME = 180;
 const COPY_BATCH_MAX = 200;
 const SEARCH_MAX = 200;
@@ -130,16 +131,33 @@ function read_file(root_path, rel) {
   if (!looks_textual(resolved.path, stat.size, resolved.ext)) {
     return { ...base, kind: 'binary', truncated: false, binary: true, content: '' };
   }
+  if (stat.size <= EDIT_MAX_BYTES) {
+    const buf = fs.readFileSync(resolved.path);
+    return {
+      ...base,
+      kind: 'text',
+      truncated: false,
+      editable: true,
+      binary: false,
+      loaded_bytes: buf.length,
+      content: buf.toString('utf8'),
+    };
+  }
   const handle = fs.openSync(resolved.path, 'r');
   try {
     const buf = Buffer.alloc(Math.min(TEXT_MAX_BYTES, stat.size));
     fs.readSync(handle, buf, 0, buf.length, 0);
+    let end = buf.length;
+    while (end > 0 && (buf[end - 1] & 0xc0) === 0x80) end -= 1;
+    const preview = buf.subarray(0, end > 0 ? end : buf.length);
     return {
       ...base,
       kind: 'text',
-      truncated: stat.size > buf.length,
+      truncated: true,
+      editable: false,
       binary: false,
-      content: buf.toString('utf8'),
+      loaded_bytes: preview.length,
+      content: preview.toString('utf8'),
     };
   } finally {
     fs.closeSync(handle);
@@ -311,9 +329,9 @@ async function import_mapped(root_path, source_path, rel) {
   return { ok: true, existed: false, rel: after.rel, message: '' };
 }
 
-async function write_text(root_path, rel, content, expected_mtime) {
+async function write_text(root_path, rel, content, expected_mtime, loaded_bytes) {
   if (typeof content !== 'string') throw new Error('content must be text');
-  if (Buffer.byteLength(content, 'utf8') > TEXT_MAX_BYTES * 8) throw new Error('file is too large to save here');
+  if (Buffer.byteLength(content, 'utf8') > EDIT_MAX_BYTES) throw new Error('file is too large to save here');
   const root_info = require_root(root_path);
   const destination = resolve_inside(root_info.path, rel);
   if (!destination || destination.rel === '') throw new Error('that path is outside the workspace');
@@ -335,9 +353,13 @@ async function write_text(root_path, rel, content, expected_mtime) {
     if (!parent) throw new Error('that path is outside the workspace');
     await fs.promises.mkdir(parent.path, { recursive: true });
   }
+  const loaded = Number(loaded_bytes);
+  if (current && Number.isFinite(loaded) && loaded + 1 < current.size) {
+    throw new Error('refusing to overwrite a file from a truncated preview');
+  }
   await fs.promises.writeFile(destination.path, content, 'utf8');
   const stat = await fs.promises.stat(destination.path);
-  return { ok: true, conflict: false, mtime: stat.mtimeMs, rel: destination.rel };
+  return { ok: true, conflict: false, mtime: stat.mtimeMs, size: stat.size, rel: destination.rel };
 }
 
 async function search_files(root_path, query) {
@@ -368,7 +390,7 @@ function register_file_ipc() {
   const { ipcMain } = electron_bits();
   ipcMain.handle('files:list', (_event, root_path, rel) => list_dir(root_path, rel));
   ipcMain.handle('files:read', (_event, root_path, rel) => read_file(root_path, rel));
-  ipcMain.handle('files:write', (_event, root_path, rel, content, expected_mtime) => write_text(root_path, rel, content, expected_mtime));
+  ipcMain.handle('files:write', (_event, root_path, rel, content, expected_mtime, loaded_bytes) => write_text(root_path, rel, content, expected_mtime, loaded_bytes));
   ipcMain.handle('files:search', (_event, root_path, query) => search_files(root_path, query));
   ipcMain.handle('files:watch', (_event, root_path) => watch_root(root_path));
   ipcMain.handle('files:unwatch', (_event, root_path) => unwatch_root(root_path));

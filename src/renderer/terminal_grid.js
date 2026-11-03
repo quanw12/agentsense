@@ -701,19 +701,21 @@
     }
     if (view.disposed) return;
 
+    view.hold_layout = true;
     for (const info of infos) EXTERNAL_TERMINALS.delete(info.terminal_id);
     for (const info of infos) {
       if (PANE_BY_TERMINAL.has(info.terminal_id)) continue;
       attach_info_to_view(grid, view, info);
     }
-    apply_saved_layout(view);
     const saved_files = workspace_ui(view.workspace.id).file_tabs;
     if (Array.isArray(saved_files)) {
       for (const tab of saved_files) {
         if (tab && typeof tab.path === 'string' && tab.path !== '') open_file_in_grid(grid, view.workspace, tab.path, tab.root);
       }
     }
+    apply_saved_layout(view);
     relayout_view(grid, view);
+    view.hold_layout = false;
     view.ready = true;
     notify_grid(grid);
   }
@@ -1207,6 +1209,12 @@
   }
 
   function close_file_at(grid, pane, index) {
+    const file = pane.files[index];
+    if (file && file.conflict) {
+      show_banner(grid, `${file.name} changed on disk. Your edits are still in the editor and were not overwritten.`);
+      return;
+    }
+    if (file && file.dirty && file.editable !== false) flush_editor(grid, pane, file);
     pane.files.splice(index, 1);
     if (pane.files.length === 0) {
       remove_pane(grid, pane);
@@ -1227,6 +1235,10 @@
     pane.path = file.path;
     pane.name = file.name;
     render_file_tabs(grid, pane);
+    if (file.loaded && (file.dirty || file.conflict)) {
+      paint_text_editor(grid, pane, file);
+      return;
+    }
     if (reload || !file.loaded) await load_file_content(grid, pane);
   }
 
@@ -1267,6 +1279,11 @@
         file.loaded = true;
         file.mtime = result.mtime;
         file.disk = String(result.content || '');
+        file.buffer = file.disk;
+        file.dirty = false;
+        file.conflict = false;
+        file.editable = result.editable !== false && !result.truncated;
+        file.loaded_bytes = Number.isFinite(result.loaded_bytes) ? result.loaded_bytes : result.size;
       }
       pane.body.textContent = '';
       const meta = create_el('div', 'tf-meta');
@@ -1274,22 +1291,8 @@
       const kind = result.kind || (result.binary ? 'binary' : 'text');
       meta.textContent = size;
       if (kind === 'text') {
-        if (result.truncated) meta.textContent = `${size} (showing the first part)`;
-        const text = create_el('textarea', 'tf-text tf-editor');
-        text.value = String(result.content || '');
-        text.spellcheck = false;
-        const status = create_el('span', 'tf-save', 'saved');
-        meta.append(status);
-        text.addEventListener('input', () => {
-          if (!file) return;
-          file.dirty = text.value !== file.disk;
-          file.buffer = text.value;
-          status.textContent = file.dirty ? 'edited' : 'saved';
-          render_file_tabs(grid, pane);
-          if (pane.save_timer) window.clearTimeout(pane.save_timer);
-          pane.save_timer = window.setTimeout(() => save_editor(grid, pane, file, text, status), 600);
-        });
-        pane.body.append(meta, text);
+        if (result.truncated) meta.textContent = `${size} (showing the first part, read-only)`;
+        paint_text_editor(grid, pane, file, meta);
       } else if (kind === 'image') {
         const media = create_el('div', 'tf-media');
         const image = create_el('img', 'tf-image');
@@ -1331,25 +1334,79 @@
     }
   }
 
-  async function save_editor(grid, pane, file, text, status) {
-    if (!file.dirty || pane.disposed) return;
-    status.textContent = 'saving';
+  function paint_text_editor(grid, pane, file, meta) {
+    if (!meta) {
+      pane.body.textContent = '';
+      meta = create_el('div', 'tf-meta');
+      meta.textContent = file.editable === false ? 'read-only preview' : '';
+    }
+    const text = create_el('textarea', 'tf-text tf-editor');
+    text.value = file.buffer != null ? file.buffer : '';
+    text.spellcheck = false;
+    text.readOnly = file.editable === false;
+    const status = create_el('span', 'tf-save', file.conflict ? 'conflict' : (file.dirty ? 'edited' : 'saved'));
+    meta.append(status);
+    file.status_el = status;
+    if (file.editable !== false) {
+      text.addEventListener('input', () => {
+        file.edit_generation = (file.edit_generation || 0) + 1;
+        file.buffer = text.value;
+        file.dirty = text.value !== file.disk;
+        status.textContent = file.dirty ? 'edited' : 'saved';
+        render_file_tabs(grid, pane);
+        schedule_save(grid, pane, file);
+      });
+    }
+    pane.body.append(meta, text);
+  }
+
+  function schedule_save(grid, pane, file) {
+    if (file.save_timer) window.clearTimeout(file.save_timer);
+    file.save_timer = window.setTimeout(() => {
+      file.save_timer = 0;
+      void save_editor(grid, pane, file, file.buffer, file.edit_generation || 0);
+    }, 600);
+  }
+
+  function flush_editor(grid, pane, file) {
+    if (file.save_timer) {
+      window.clearTimeout(file.save_timer);
+      file.save_timer = 0;
+    }
+    void save_editor(grid, pane, file, file.buffer, file.edit_generation || 0);
+  }
+
+  async function save_editor(grid, pane, file, snapshot, generation) {
+    if (!file || !file.dirty || file.editable === false || pane.disposed) return;
+    if (file.status_el) file.status_el.textContent = 'saving';
     try {
-      const outcome = await window.hub.files.write(file.root, file.path, text.value, file.mtime);
+      const outcome = await window.hub.files.write(file.root, file.path, snapshot, file.mtime, file.loaded_bytes);
       if (outcome && outcome.conflict) {
-        status.textContent = 'conflict';
+        file.conflict = true;
+        file.dirty = true;
+        if (file.buffer == null) file.buffer = snapshot;
+        if (file.status_el) file.status_el.textContent = 'conflict';
         show_banner(grid, `${file.name} changed on disk. Your edits are still in the editor and were not overwritten.`);
-        file.conflict = outcome.content;
+        render_file_tabs(grid, pane);
         return;
       }
       file.mtime = outcome.mtime;
-      file.disk = text.value;
+      file.loaded_bytes = outcome.size;
+      const newer = file.buffer !== snapshot || (file.edit_generation || 0) !== generation;
+      file.disk = snapshot;
+      if (newer) {
+        file.dirty = true;
+        if (file.status_el) file.status_el.textContent = 'edited';
+        schedule_save(grid, pane, file);
+        return;
+      }
       file.dirty = false;
-      file.buffer = text.value;
-      status.textContent = 'saved';
+      file.conflict = false;
+      file.buffer = snapshot;
+      if (file.status_el) file.status_el.textContent = 'saved';
       render_file_tabs(grid, pane);
     } catch (error) {
-      status.textContent = 'error';
+      if (file.status_el) file.status_el.textContent = 'error';
       show_banner(grid, `Could not save ${file.name}: ${error_text(error)}`);
     }
   }
@@ -1377,7 +1434,7 @@
     }
     void activate_file(grid, pane, index, true);
     select_tab(grid, pane);
-    save_view_layout(grid, view);
+    if (!view.hold_layout) save_view_layout(grid, view);
   }
 
   // ---- tiled layout ----
@@ -1408,7 +1465,7 @@
   }
 
   function save_view_layout(grid, view) {
-    if (!view || !view.workspace || view.disposed) return;
+    if (!view || !view.workspace || view.disposed || view.hold_layout) return;
     const group = file_group(view);
     save_workspace_ui(view.workspace.id, {
       files_open: view.files_open,
@@ -1472,7 +1529,6 @@
   async function open_quick_open(grid) {
     const view = grid.active_view;
     if (!view) return;
-    const root = view.file_panel && view.file_panel.current_root ? view.file_panel.current_root() : view.workspace.path;
     let overlay = view.quick;
     if (!overlay) {
       overlay = create_el('div', 'tg-quick');
@@ -1483,23 +1539,24 @@
       overlay.append(input, list);
       view.root.append(overlay);
       view.quick = overlay;
+      const live_root = () => (view.file_panel && view.file_panel.current_root ? view.file_panel.current_root() : view.workspace.path);
       input.addEventListener('keydown', async (event) => {
         if (event.key === 'Escape') { overlay.hidden = true; return; }
         if (event.key === 'Enter') {
           const chosen = list.querySelector('.tg-quick-item');
-          if (chosen) open_file_in_grid(grid, view.workspace, chosen.dataset.path, root);
+          if (chosen) open_file_in_grid(grid, view.workspace, chosen.dataset.path, live_root());
           overlay.hidden = true;
         }
       });
       input.addEventListener('input', async () => {
-        const found = await window.hub.files.search(root, input.value);
+        const found = await window.hub.files.search(live_root(), input.value);
         list.textContent = '';
         for (const item of (found && found.results) || []) {
           const row = create_el('button', 'tg-quick-item', item.rel);
           row.type = 'button';
           row.dataset.path = item.rel;
           row.addEventListener('click', () => {
-            open_file_in_grid(grid, view.workspace, item.rel, root);
+            open_file_in_grid(grid, view.workspace, item.rel, live_root());
             overlay.hidden = true;
           });
           list.append(row);
@@ -1928,7 +1985,7 @@
     const result = await window.hub.terminals.create(options);
     pane.cwd = result.cwd || options.cwd;
     pane.base_cwd = result.base_cwd || pane.base_cwd;
-    pane.worktree = result.worktree || pane.worktree || null;
+    pane.worktree = result.worktree || null;
     pane.record_id = result.record_id || pane.record_id;
     pane.model_id = result.model_id || pane.model_id;
     pane.provider_id = result.provider_id || pane.provider_id;
@@ -1945,6 +2002,7 @@
     pane.view.selected = pane;
     pane.element.classList.add('tg-active');
     render_tabs(grid, pane.view);
+    sync_file_context(pane.view, pane);
   }
 
   function select_tab(grid, pane) {
@@ -1954,7 +2012,6 @@
     render_tabs(grid, view);
     if (pane.term) pane.term.focus();
     else if (pane.body) pane.body.focus();
-    sync_file_context(view, pane);
   }
 
   function sync_file_context(view, pane) {
@@ -2151,6 +2208,7 @@
     const view = ensure_view(grid, workspace);
     await wait_for_attach(view);
     if (view.disposed) return 0;
+    view.hold_layout = true;
 
     clear_banner(grid);
     let restored = 0;
@@ -2200,6 +2258,10 @@
       notify_grid(grid);
     }
 
+    apply_saved_layout(view);
+    relayout_view(grid, view);
+    view.hold_layout = false;
+    save_view_layout(grid, view);
     if (failures.length) {
       show_banner(grid, `Could not restore ${failures.join(' | ')}. The saved session was kept so you can retry.`);
     }
@@ -2209,8 +2271,7 @@
   async function restart_pane(grid, pane) {
     if (pane.disposed || pane.status !== 'exited') return;
     const old_terminal_id = pane.terminal_id;
-    // A pane with a worktree gets a fresh one: closing the exited session removes its worktree when it is clean,
-    // so the old folder cannot be reused.
+    // Restart reuses the current worktree. The saved record keeps its identity so main can resolve it.
     set_pane_status(pane, 'starting', null);
     pane.term.write('\r\n\x1b[2m[restarting]\x1b[0m\r\n');
     if (pane.resume_mode && pane.resume_mode !== 'conversation') {

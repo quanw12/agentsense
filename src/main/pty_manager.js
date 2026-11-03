@@ -247,20 +247,23 @@ async function create_terminal(opts) {
     throw error;
   }
 
-  const record = session_store.make_record({
+  const kept_worktree = worktree_public(worktree_info);
+  const record_fields = {
     workspace_id,
     agent_id,
     title: String(title),
     command: base_command,
     cwd,
     base_cwd,
-    claude_session_id: resume_session_id,
-    model_id: context.model_id,
-    provider_id: context.provider_id,
+    claude_session_id: resume_session_id || (restore_record && restore_record.claude_session_id) || null,
+    model_id: context.model_id || (restore_record && restore_record.model_id) || null,
+    provider_id: context.provider_id || (restore_record && restore_record.provider_id) || null,
     resume_mode: context.resume_mode,
     last_error: null,
-    worktree: worktree_public(worktree_info),
-  });
+    worktree: kept_worktree,
+  };
+  if (restore_id) record_fields.record_id = restore_id;
+  const record = session_store.make_record(record_fields);
 
   const session = {
     terminal_id,
@@ -284,7 +287,7 @@ async function create_terminal(opts) {
     provider_id: context.provider_id,
     resume_mode: context.resume_mode,
     hooks_file,
-    worktree: worktree_public(worktree_info),
+    worktree: kept_worktree,
   };
   sessions.set(terminal_id, session);
   if (hooks_file) get_hook_server().register_terminal(terminal_id);
@@ -313,12 +316,8 @@ async function create_terminal(opts) {
     session.exit_code = exitCode;
     session.pty = null;
     note_life('exit', terminal_id);
-    // The pane is gone on its own, so it is no longer a saved session. Its worktree stays until the pane is closed.
-    try {
-      session_store.remove_record(session_store.default_file_path(), session.record_id);
-    } catch (error) {
-      log_error('could not remove the session record', error);
-    }
+    // Keep the saved record, including worktree identity, so Restart can resolve it.
+    // An explicit close is what removes the record.
     if (session.hooks_file) claude_hooks.delete_hooks_file(hooks_dir(), terminal_id);
     terminal_events.emit('exit', terminal_id, exitCode);
   });
@@ -332,7 +331,7 @@ async function create_terminal(opts) {
     model_id: context.model_id,
     provider_id: context.provider_id,
     resume_mode: context.resume_mode,
-    worktree: worktree_public(worktree_info),
+    worktree: kept_worktree,
   };
 }
 

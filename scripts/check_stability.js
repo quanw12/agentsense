@@ -85,6 +85,43 @@ check('provider file has no plaintext key', !on_disk.includes('sk-fixture-token'
 const opened = providers.require_provider_secret(saved.id);
 check('main process can open the sealed key', opened.api_key === 'sk-fixture-token');
 
+const legacy_file = path.join(state_dir, 'providers-legacy.json');
+const legacy_before = JSON.stringify({
+  providers: [
+    { id: 'legacy', name: 'Legacy', kind: 'anthropic', base_url: 'https://example.invalid', api_key: 'FAKE-REVIEW-KEY', models: ['demo'] },
+    { id: 'other', name: 'Other', kind: 'openai', base_url: 'https://example.invalid', api_key: 'FAKE-OTHER-KEY', models: ['demo'] },
+  ],
+});
+fs.writeFileSync(legacy_file, legacy_before);
+providers.set_file_for_tests(legacy_file);
+providers.set_codec_for_tests({ available: () => false });
+let rename_rejected = false;
+try {
+  providers.save_provider({ id: 'legacy', name: 'Renamed', kind: 'anthropic', base_url: 'https://example.invalid', models: ['demo'] });
+} catch (error) {
+  rename_rejected = true;
+}
+check('legacy key survives a metadata edit when sealing is unavailable', rename_rejected && fs.readFileSync(legacy_file, 'utf8') === legacy_before);
+let remove_rejected = false;
+try { providers.remove_provider('other'); } catch (error) { remove_rejected = true; }
+check('removing another provider does not drop a legacy key', remove_rejected && fs.readFileSync(legacy_file, 'utf8') === legacy_before);
+providers.set_codec_for_tests({
+  available: () => true,
+  encrypt: () => { throw new Error('seal failed'); },
+  decrypt: () => { throw new Error('decrypt failed'); },
+});
+let seal_rejected = false;
+try {
+  providers.save_provider({
+    id: 'legacy', name: 'Legacy', kind: 'anthropic', base_url: 'https://example.invalid', models: ['demo'], api_key: 'new-key',
+  });
+} catch (error) {
+  seal_rejected = true;
+}
+check('a failed seal does not rewrite provider secrets', seal_rejected && fs.readFileSync(legacy_file, 'utf8') === legacy_before);
+providers.set_codec_for_tests(null);
+providers.set_file_for_tests(null);
+
 (async () => {
   const batch = [];
   for (let i = 0; i < 101; i += 1) {
@@ -102,6 +139,38 @@ check('main process can open the sealed key', opened.api_key === 'sk-fixture-tok
   check('mapped import keeps the relative path', mapped.ok && mapped.rel === 'src/secret.txt');
   const again = await files.import_mapped(root, path.join(outside, 'secret.txt'), 'src/secret.txt');
   check('mapped import does not overwrite', again.existed === true && fs.readFileSync(path.join(root, 'src', 'secret.txt'), 'utf8') === 'sentinel');
+
+  fs.writeFileSync(path.join(root, 'large.txt'), 'a'.repeat(600 * 1024));
+  const full = files.read_file(root, 'large.txt');
+  check('a 600 KiB file is loaded in full', full.truncated === false && full.editable === true && full.content.length === 600 * 1024);
+  await files.write_text(root, 'large.txt', `${full.content}EDIT`, full.mtime, full.loaded_bytes);
+  const large_after = fs.readFileSync(path.join(root, 'large.txt'));
+  check('saving a fully loaded file keeps the tail', large_after.length >= 600 * 1024 && large_after.subarray(-4).toString() === 'EDIT');
+
+  const utf_body = `${'x'.repeat((512 * 1024) - 1)}éTAIL`;
+  fs.writeFileSync(path.join(root, 'utf8.txt'), utf_body);
+  const utf = files.read_file(root, 'utf8.txt');
+  check('utf-8 across the old 512 KiB boundary stays intact', utf.truncated === false && utf.content === utf_body);
+
+  const bom = '\uFEFFline1\r\nline2\r\n';
+  fs.writeFileSync(path.join(root, 'bom.txt'), bom);
+  const bom_read = files.read_file(root, 'bom.txt');
+  await files.write_text(root, 'bom.txt', bom_read.content, bom_read.mtime, bom_read.loaded_bytes);
+  const bom_back = fs.readFileSync(path.join(root, 'bom.txt'));
+  check('BOM and CRLF survive a save', bom_back[0] === 0xef && bom_back[1] === 0xbb && bom_back[2] === 0xbf && bom_back.includes(Buffer.from('\r\n')));
+
+  const huge = Buffer.alloc((4 * 1024 * 1024) + 10, 0x61);
+  fs.writeFileSync(path.join(root, 'huge.txt'), huge);
+  const too = files.read_file(root, 'huge.txt');
+  let refused = false;
+  try { await files.write_text(root, 'huge.txt', 'short', too.mtime, 100); } catch (error) { refused = /truncated/.test(error.message); }
+  check('a truncated preview cannot overwrite the file', too.kind === 'too_large' && refused && fs.statSync(path.join(root, 'huge.txt')).size === huge.length);
+
+  fs.writeFileSync(path.join(root, 'a.txt'), 'original A');
+  const small = files.read_file(root, 'a.txt');
+  fs.writeFileSync(path.join(root, 'a.txt'), 'EXTERNAL DISK UPDATE');
+  const conflict = await files.write_text(root, 'a.txt', 'MY UNSAVED EDIT', small.mtime, small.loaded_bytes);
+  check('an external update conflicts instead of being overwritten', conflict.conflict === true && fs.readFileSync(path.join(root, 'a.txt'), 'utf8') === 'EXTERNAL DISK UPDATE');
 
   const limiter = create_limiter({ limit: 3, lock_ms: 1000 });
   const source_a = { socket: { remoteAddress: '10.0.0.1' } };
