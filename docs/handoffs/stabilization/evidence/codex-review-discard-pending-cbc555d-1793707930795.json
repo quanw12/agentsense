@@ -1,0 +1,29 @@
+{
+  "reviewedHead": "cbc555df37e239a5a3933224e73f00276dc58706",
+  "createdAt": "2026-11-03T12:12:10.795Z",
+  "fixtureRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-review-discard-KCoqMF",
+  "slowIO": "first post-conflict files:write paused; all writes use production write_text",
+  "results": [
+    {
+      "id": "DISCARD_CONTROL",
+      "passed": true,
+      "actual": {
+        "disk": "EXTERNAL VERSION TO PRESERVE",
+        "editor": "EXTERNAL VERSION TO PRESERVE",
+        "writeCount": 1
+      }
+    },
+    {
+      "id": "R10",
+      "passed": true,
+      "actual": {
+        "expectation": "Pending autosaves cannot restore discarded edits or overwrite the external version, including transient writes",
+        "disk": "EXTERNAL VERSION TO PRESERVE",
+        "editor": "EXTERNAL VERSION TO PRESERVE",
+        "status": "saved",
+        "writeCount": 1,
+        "writesAfterDiscard": []
+      }
+    }
+  ]
+}

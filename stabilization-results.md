@@ -12,7 +12,7 @@ Người thực hiện: Grok 4.7. Người review: Codex. Không push, không me
 - Repo root: `C:\StudyBase\AgentSense`
 - OS / CPU: Windows 10.0.26300, x64. Node v24.11.1, npm 11.6.3, Electron 44.9.0
 - Branch local: `fix/workbench-stability`
-- Local commits: `03dda35`, `78f9e35`, `0260de4`, `4edad8c`, `53a24d5`, `c0c5e37`, `e6e3d86`, `28102e3`, `b03fed0`, rồi commit ghi SHA này
+- Local commits: `03dda35`, `78f9e35`, `0260de4`, `4edad8c`, `53a24d5`, `c0c5e37`, `e6e3d86`, `28102e3`, `b03fed0`, `34b7ce3`, `cbc555d`, rồi commit ghi SHA này
 - HEAD lúc bắt đầu: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa` (`main`, khớp baseline audit)
 - BASE_SHA dùng để review: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa`
 - Git status trước khi làm: `main` sạch ngoài các file handoff chưa track (`grok-4.7-prompt.md`, `stabilization-*.md`, `codex-review-prompt.md`, `docs/handoffs/stabilization/`)
@@ -46,7 +46,7 @@ Trạng thái dưới đây không phải PASS của public release. `FIXED_VERI
 | T20 | Một chủ PTY size | IMPLEMENTED_NOT_VERIFIED | Mobile resize không áp khi có cửa sổ desktop | Chưa 2 WebSocket và chưa máy thật |
 | T21 | Rate limit theo nguồn | IMPLEMENTED_NOT_VERIFIED | check: A lock, B không. Smoke mobile: cùng nguồn vẫn lock sau 3 token sai | Chưa rotate token + expiry trên HTTP |
 | T22 | Mobile LAN/VPN | IMPLEMENTED_NOT_VERIFIED | UI/state nói loopback và LAN, không nhận là internet/TLS. APPROACH: không làm cloud | LAN/VPN thật NOT_RUN |
-| T23 | ConPTY lifecycle | IMPLEMENTED_NOT_VERIFIED | 20 cycle exit 0. Spawn Windows dùng `useConptyDll` nên kill không fork helper AttachConsole. Mobile smoke sau sửa không còn stack đó | Lần smoke đầu exit `0xC0000005` vẫn là lịch sử. Soak 30 phút NOT_RUN |
+| T23 | ConPTY lifecycle | IMPLEMENTED_NOT_VERIFIED | 20 cycle exit 0. `useConptyDll` bỏ helper AttachConsole. Workbench lần này: một lần chết `0xC0000005` sau "no renderer errors", lần sau exit 0 với 4 shell còn alive trước `exit` | Không phải soak. Timeout/AV lúc thoát shell chưa có root cause |
 | T24 | Một nguồn build | IMPLEMENTED_NOT_VERIFIED | `scripts/build_app.mjs` stage rồi swap, ghi `BUILD.json` | Chưa chạy `npm run dist` |
 | T25 | Cài đặt có rollback | IMPLEMENTED_NOT_VERIFIED | `install.ps1` stage/swap, từ chối `%APPDATA%` | Chưa cài/nâng cấp/gỡ trong thư mục tạm |
 | T26 | Phát hành | xem mục con | local only | Không FIXED_VERIFIED |
@@ -68,7 +68,7 @@ Trạng thái dưới đây không phải PASS của public release. `FIXED_VERI
 
 | Mục con | Trạng thái | Kết quả | Bằng chứng | Còn thiếu |
 | --- | --- | --- | --- | --- |
-| T28a | IMPLEMENTED_NOT_VERIFIED | R7/R8/R9 PASS. Conflict đã biết chặn close cho đến khi Discard | evidence conflicted-quit và editor lifecycle sau `e6e3d86` | Chưa đo nhiều workspace cùng lúc trên UI |
+| T28a | IMPLEMENTED_NOT_VERIFIED | R7–R10. Discard tăng `save_epoch` nên snapshot xếp hàng không được ghi | evidence discard-pending sau commit sửa | Chưa đo nhiều workspace cùng lúc trên UI |
 | T28b | IMPLEMENTED_NOT_VERIFIED | Quick-open đọc root hiện tại lúc gõ, không đóng root lần tạo overlay | `open_quick_open` | Chưa bấm Ctrl+P sau khi đổi worktree |
 | T28c | IMPLEMENTED_NOT_VERIFIED | Smoke workbench/mobile và lifecycle vẫn pass. Fixture R1–R6 exit 0 sau sửa | evidence timestamp bên dưới. Evidence FAIL gốc không sửa | Chưa phủ hết T01–T27 |
 | T28d | NOT_RUN | | | Windows sạch, path tiếng Việt, upgrade hai artifact |
@@ -125,9 +125,9 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 ## 8. Dành cho Codex
 
 - CODEX_REVIEW_STATE: CHANGES_REQUESTED
-- HEAD review mới nhất: `28102e32ab41b74dbd7219d823d6697528984395`, ngày 03/11/2026. Các vòng trước giữ trong báo cáo lịch sử.
-- Quyết định vòng 3: R1–R8 PASS ở ca cũ, mobile teardown hiện sạch, nhưng còn R9 [P1] quit bỏ mất buffer đã conflict. Chưa đạt điều kiện push/tạo PR mà người dùng đã cho phép khi review đạt.
-- Báo cáo hiện tại và việc sửa tiếp: [codex-review-round3.md](docs/handoffs/stabilization/codex-review-round3.md).
+- HEAD review mới nhất: `34b7ce321ffd574d03dec7275bcc08bb25696e5c`, ngày 03/11/2026. Các vòng trước giữ trong báo cáo lịch sử.
+- Quyết định vòng 4: R1–R9 PASS ở ca đã chạy, nhưng R10 FAIL: queued save ghi snapshot đã discard xuống đĩa rồi autosave sau mới ghi trả lại external version. Chưa approve push/tạo PR. Workbench smoke còn một lượt timeout shell exit, lượt riêng sau pass.
+- Báo cáo hiện tại và việc sửa tiếp: [codex-review-round4.md](docs/handoffs/stabilization/codex-review-round4.md).
 - Báo cáo reviewer, ma trận T01–T28/subtask và prompt sửa tiếp cho Grok: [codex-review.md](docs/handoffs/stabilization/codex-review.md).
 - `npm run check`, workbench/mobile smoke, 20 lifecycle cycles và JS syntax đều pass. Fixture `scripts/codex_review_regressions.js` exit 1: R1–R6 FAIL; evidence ở `docs/handoffs/stabilization/evidence/codex-review-regressions.json`.
 - Không sửa implementation, không commit/push/PR/merge/release trong lượt review. Chỉ bổ sung hồ sơ review và fixture kiểm chứng. Không có kênh gửi trực tiếp Grok; prompt bàn giao nằm trong báo cáo trên.
@@ -181,4 +181,20 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 - R9: `docs/handoffs/stabilization/evidence/codex-review-conflicted-quit-b03fed0-1793706961388.json`, cửa sổ không đóng, buffer còn nguyên. Evidence FAIL gốc của vòng 3 giữ nguyên.
 - R7/R8 sau khi Discard rõ ràng: `docs/handoffs/stabilization/evidence/codex-review-editor-b03fed0-1793706965739.json`.
 - R1–R6: `docs/handoffs/stabilization/evidence/codex-review-regressions-b03fed0-1793706974267.json`.
+- Public release: NOT_READY. Chưa push, chưa merge, chưa phát hành.
+
+## 14. Codex review vòng 4
+
+- HEAD `34b7ce3`: known-conflict quit R9, explicit discard/normal close R7/R8, R1–R6, 27 Node checks và mobile smoke PASS. Lifecycle 20/20 PASS.
+- R10 [P2] FAIL: Discard chưa invalidate queued save snapshot. Fixture slow-IO audit successful writes ghi nhận `OLD AUTOSAVE TWO` được ghi sau Discard trước khi autosave ghi trả external version; final contents đúng nhưng có overwrite tạm thời, không khẳng định mất dữ liệu vĩnh viễn trong ca này.
+- `scripts/codex_review_discard_pending.js`, evidence `docs/handoffs/stabilization/evidence/codex-review-discard-pending-34b7ce3-1793707417778.json`, exit 1.
+- Workbench smoke lần đầu timeout `test shells exit`; lượt xác nhận chạy riêng pass. Cần điều tra/ghi lifecycle tại timeout, không coi đã soak verified.
+- CHANGES_REQUESTED. Không sửa implementation/commit/push/PR/merge/release trong review. Giao việc qua `docs/handoffs/stabilization/codex-review-round4.md`.
+
+## 15. Sửa sau review vòng 4
+
+- Discard tăng `save_epoch` và xóa timer. Task đã xếp hàng thấy epoch cũ thì không gọi write. Response của write đang chạy cũng bị bỏ nếu epoch đã đổi, nên không ghi đè buffer vừa nạp lại.
+- Implementation: `cbc555df37e239a5a3933224e73f00276dc58706`.
+- R10 trên commit đó: `docs/handoffs/stabilization/evidence/codex-review-discard-pending-cbc555d-1793707930795.json`. `writesAfterDiscard` rỗng, `writeCount` dừng ở 1, đĩa và editor vẫn là `EXTERNAL VERSION TO PRESERVE`. Evidence FAIL gốc của vòng 4 giữ nguyên.
+- Workbench: lượt gộp chết `0xC0000005` sau khi các check UI đã pass, trước dòng "all checks passed". Lượt riêng sau đó exit 0. Bốn terminal còn `alive:true` ngay trước khi gửi `exit`. Không tăng timeout. Soak vẫn NOT_RUN.
 - Public release: NOT_READY. Chưa push, chưa merge, chưa phát hành.
