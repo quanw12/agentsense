@@ -1,6 +1,6 @@
 // Rebuilds from source, verifies the payload, then stages and swaps app/.
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
@@ -91,7 +91,11 @@ const target = path.join(root, 'app');
 const previous = path.join(root, 'app.previous');
 for (const dir of [stage, target, previous]) assert_owned_dir(dir);
 if (existsSync(stage)) rmSync(stage, { recursive: true, force: true });
-cpSync(unpacked, stage, { recursive: true });
+// Separate the recursive copier's lifetime from the swap. On Windows a copy
+// process can retain directory handles until it exits, preventing the rename.
+execFileSync(process.execPath, ['-e', "require('node:fs').cpSync(process.argv[1], process.argv[2], {recursive:true});", unpacked, stage], {
+  cwd: root, stdio: 'inherit', windowsHide: true,
+});
 if (!existsSync(path.join(stage, 'AgentSense.exe'))) {
   rmSync(stage, { recursive: true, force: true });
   console.error('Staged payload has no AgentSense.exe. app/ was left unchanged.');

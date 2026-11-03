@@ -7,6 +7,8 @@ dist/
 # (Install AgentSense.cmd copies it to %LOCALAPPDATA%\Programs\AgentSense).
 # Regenerate it from source any time: npm run build:app
 app/
+app.staging/
+app.previous/
 
 *.zip
 *.tmp
