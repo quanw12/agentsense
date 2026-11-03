@@ -24,10 +24,16 @@ function discard(record_id) {
   session_store.remove_record(session_store.default_file_path(), record_id);
 }
 
+function note_error(record_id, message) {
+  require_string(record_id, 'record_id');
+  return session_store.set_last_error(session_store.default_file_path(), record_id, message);
+}
+
 function register_session_ipc() {
   ipcMain.handle('sessions:list_saved', (_event, workspace_id) => list_saved(workspace_id));
   ipcMain.handle('sessions:discard', (_event, record_id) => discard(record_id));
+  ipcMain.handle('sessions:note_error', (_event, record_id, message) => note_error(record_id, message));
   ipcMain.handle('git:is_repo', (_event, folder_path) => worktree.is_git_repo(folder_path));
 }
 
-module.exports = { register_session_ipc, list_saved, discard };
+module.exports = { register_session_ipc, list_saved, discard, note_error };

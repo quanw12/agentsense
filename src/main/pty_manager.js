@@ -14,6 +14,8 @@ const session_store = require('./session_store');
 const worktree = require('./worktree');
 const claude_hooks = require('./claude_hooks');
 const { get_hook_server } = require('./hook_server');
+const cli_capabilities = require('./cli_capabilities');
+const providers_store = require('./providers_store');
 
 const RING_BUFFER_LIMIT = 200 * 1024; // characters kept per terminal for repaint after reload
 const DEFAULT_COLS = 80;
@@ -22,6 +24,17 @@ const DIRECT_COMMANDS = ['powershell.exe', 'cmd.exe'];
 
 const sessions = new Map(); // terminal_id -> session
 const terminal_events = new EventEmitter();
+const lifecycle = [];
+let desktop_present = () => false;
+
+function note_life(step, detail) {
+  lifecycle.push({ at: Date.now(), step, detail: detail || null });
+  if (lifecycle.length > 400) lifecycle.shift();
+}
+
+function set_desktop_present(fn) {
+  desktop_present = typeof fn === 'function' ? fn : () => false;
+}
 
 function clamp_size(value, fallback) {
   const number = Math.floor(Number(value));
@@ -102,13 +115,51 @@ function to_info(session) {
   return {
     terminal_id: session.terminal_id,
     workspace_id: session.workspace_id,
+    agent_id: session.agent_id,
     title: session.title,
     command: session.command,
     cwd: session.cwd,
+    base_cwd: session.base_cwd,
     alive: session.alive,
     exit_code: session.exit_code,
     buffer: session.buffer,
+    record_id: session.record_id,
+    worktree: session.worktree,
+    model_id: session.model_id,
+    provider_id: session.provider_id,
+    resume_mode: session.resume_mode,
+    cols: session.cols,
+    rows: session.rows,
+    size_owner: session.size_owner,
   };
+}
+
+// Model and provider ids only. env_extra from the renderer is ignored so API keys never land in the session record.
+function launch_context(agent_id, options) {
+  const model_id = typeof options.model_id === 'string' && options.model_id.trim() !== '' ? options.model_id.trim() : null;
+  const provider_id = typeof options.provider_id === 'string' && options.provider_id.trim() !== '' ? options.provider_id.trim() : null;
+  const caps = cli_capabilities.capability_for(agent_id);
+  const env = {};
+  if (provider_id) {
+    const provider = providers_store.require_provider_secret(provider_id);
+    if (!provider) throw new Error('the selected provider no longer exists; choose another provider');
+    cli_capabilities.assert_provider_compatible(agent_id, provider.kind);
+    if (provider.kind === 'anthropic') {
+      env.ANTHROPIC_BASE_URL = provider.base_url;
+      env.ANTHROPIC_AUTH_TOKEN = provider.api_key;
+      if (model_id) env.ANTHROPIC_MODEL = model_id;
+    } else {
+      env.OPENAI_BASE_URL = provider.base_url;
+      env.OPENAI_API_KEY = provider.api_key;
+      if (model_id) env.OPENAI_MODEL = model_id;
+    }
+  } else if (model_id) {
+    if (!caps.model_env) {
+      throw new Error(`${agent_id} has no verified model flag in this build; launch with the CLI default`);
+    }
+    Object.assign(env, cli_capabilities.model_env(agent_id, model_id));
+  }
+  return { env, model_id, provider_id, resume_mode: caps.resume };
 }
 
 function worktree_public(worktree_info) {
@@ -141,6 +192,8 @@ async function create_terminal(opts) {
   const cols = clamp_size(options.cols, DEFAULT_COLS);
   const rows = clamp_size(options.rows, DEFAULT_ROWS);
   const resume_session_id = normalize_resume_id(options.resume_session_id);
+  const context = launch_context(agent_id, options);
+  note_life('create-start', agent_id);
   const restore_id = typeof options.restore_record_id === 'string' && options.restore_record_id !== ''
     ? options.restore_record_id
     : null;
@@ -150,6 +203,9 @@ async function create_terminal(opts) {
   const wrap_claude = agent_id === 'claude' && base_command.toLowerCase() === 'claude';
 
   let cwd = requested_cwd;
+  const base_cwd = typeof options.base_cwd === 'string' && options.base_cwd.trim() !== ''
+    ? resolve_cwd(options.base_cwd)
+    : requested_cwd;
   let worktree_info = null;
   let created_worktree = false;
   if (options.use_worktree === true && (await worktree.is_git_repo(requested_cwd))) {
@@ -174,7 +230,7 @@ async function create_terminal(opts) {
     const spawn_spec = resolve_spawn(spawn_command);
     // PATH is read fresh so panes can run agents installed after the app started. env_extra carries the
     // per-seat model/API settings chosen on the launch page.
-    const env = env_with_fresh_path(Object.assign({}, process.env, env_extra(options), { TERM: 'xterm-256color' }));
+    const env = env_with_fresh_path(Object.assign({}, process.env, context.env, { TERM: 'xterm-256color' }));
     proc = pty.spawn(spawn_spec.file, spawn_spec.args, {
       name: 'xterm-256color',
       cols,
@@ -187,6 +243,7 @@ async function create_terminal(opts) {
     if (created_worktree) {
       await worktree.remove_if_clean(worktree_info).catch(() => null);
     }
+    note_life('create-failed', error && error.message);
     throw error;
   }
 
@@ -196,7 +253,12 @@ async function create_terminal(opts) {
     title: String(title),
     command: base_command,
     cwd,
+    base_cwd,
     claude_session_id: resume_session_id,
+    model_id: context.model_id,
+    provider_id: context.provider_id,
+    resume_mode: context.resume_mode,
+    last_error: null,
     worktree: worktree_public(worktree_info),
   });
 
@@ -208,11 +270,19 @@ async function create_terminal(opts) {
     title,
     command: base_command,
     cwd,
+    base_cwd,
     pty: proc,
     alive: true,
     exit_code: null,
     buffer: '',
+    cols,
+    rows,
+    size_owner: 'desktop',
+    mobile_viewport: null,
     claude_session_id: record.claude_session_id,
+    model_id: context.model_id,
+    provider_id: context.provider_id,
+    resume_mode: context.resume_mode,
     hooks_file,
     worktree: worktree_public(worktree_info),
   };
@@ -241,6 +311,8 @@ async function create_terminal(opts) {
     if (!sessions.has(terminal_id)) return;
     session.alive = false;
     session.exit_code = exitCode;
+    session.pty = null;
+    note_life('exit', terminal_id);
     // The pane is gone on its own, so it is no longer a saved session. Its worktree stays until the pane is closed.
     try {
       session_store.remove_record(session_store.default_file_path(), session.record_id);
@@ -251,9 +323,15 @@ async function create_terminal(opts) {
     terminal_events.emit('exit', terminal_id, exitCode);
   });
 
+  note_life('create-ready', terminal_id);
   return {
     terminal_id,
     cwd,
+    base_cwd,
+    record_id: record.record_id,
+    model_id: context.model_id,
+    provider_id: context.provider_id,
+    resume_mode: context.resume_mode,
     worktree: worktree_public(worktree_info),
   };
 }
@@ -264,10 +342,32 @@ function write_terminal(terminal_id, data) {
   session.pty.write(String(data));
 }
 
-function resize_terminal(terminal_id, cols, rows) {
+function resize_terminal(terminal_id, cols, rows, source) {
   const session = sessions.get(terminal_id);
-  if (!session || !session.alive) return;
-  session.pty.resize(clamp_size(cols, DEFAULT_COLS), clamp_size(rows, DEFAULT_ROWS));
+  if (!session || !session.alive || !session.pty) return { applied: false, reason: 'not-running' };
+  const origin = source === 'mobile' ? 'mobile' : 'desktop';
+  const next_cols = clamp_size(cols, DEFAULT_COLS);
+  const next_rows = clamp_size(rows, DEFAULT_ROWS);
+  // The visible desktop pane owns the process size. A phone resize is remembered and does not fight it.
+  if (origin === 'mobile' && desktop_present()) {
+    session.mobile_viewport = { cols: next_cols, rows: next_rows };
+    return {
+      applied: false,
+      reason: 'desktop-owns-size',
+      owner: session.size_owner || 'desktop',
+      cols: session.cols,
+      rows: session.rows,
+    };
+  }
+  if (session.cols === next_cols && session.rows === next_rows && session.size_owner === origin) {
+    return { applied: false, reason: 'unchanged', owner: origin, cols: next_cols, rows: next_rows };
+  }
+  session.cols = next_cols;
+  session.rows = next_rows;
+  session.size_owner = origin;
+  session.pty.resize(next_cols, next_rows);
+  terminal_events.emit('resize', terminal_id, { cols: next_cols, rows: next_rows, owner: origin });
+  return { applied: true, owner: origin, cols: next_cols, rows: next_rows };
 }
 
 // Closes a pane: kills the process, forgets the session, removes its hooks file and (unless keep_record) its saved
@@ -279,6 +379,7 @@ function close_terminal(terminal_id, options) {
   const opts = options || {};
   const session = sessions.get(terminal_id);
   if (!session) return Promise.resolve(empty_kill_result());
+  note_life('close-start', terminal_id);
   sessions.delete(terminal_id);
   if (session.alive) {
     try {
@@ -396,6 +497,8 @@ module.exports = {
   live_record_ids,
   get_record_id,
   note_claude_session,
+  set_desktop_present,
+  get_lifecycle: () => lifecycle.slice(),
   terminal_events,
   RING_BUFFER_LIMIT,
 };

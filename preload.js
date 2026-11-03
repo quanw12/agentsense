@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('hub', {
     write: (terminal_id, data) => ipcRenderer.send('terminals:write', terminal_id, data),
     resize: (terminal_id, cols, rows) => ipcRenderer.send('terminals:resize', terminal_id, cols, rows),
     kill: (terminal_id) => ipcRenderer.invoke('terminals:kill', terminal_id),
+    close: (terminal_id, options) => ipcRenderer.invoke('terminals:close', terminal_id, options || {}),
     list: (workspace_id) => ipcRenderer.invoke('terminals:list', workspace_id),
     on_data: (callback) => subscribe_channel('terminals:data', callback),
     on_exit: (callback) => subscribe_channel('terminals:exit', callback),
@@ -44,6 +45,7 @@ contextBridge.exposeInMainWorld('hub', {
   sessions: {
     list_saved: (workspace_id) => ipcRenderer.invoke('sessions:list_saved', workspace_id),
     discard: (record_id) => ipcRenderer.invoke('sessions:discard', record_id),
+    note_error: (record_id, message) => ipcRenderer.invoke('sessions:note_error', record_id, message),
   },
   git: {
     is_repo: (folder_path) => ipcRenderer.invoke('git:is_repo', folder_path),
@@ -72,6 +74,13 @@ contextBridge.exposeInMainWorld('hub', {
     open_external: (root_path, rel) => ipcRenderer.invoke('files:open_external', root_path, rel),
     reveal: (root_path, rel) => ipcRenderer.invoke('files:reveal', root_path, rel),
     copy_in: (root_path, sources) => ipcRenderer.invoke('files:copy_in', root_path, sources),
+    cancel_copy: (job_id) => ipcRenderer.invoke('files:cancel_copy', job_id),
+    import_mapped: (root_path, source_path, rel) => ipcRenderer.invoke('files:import_mapped', root_path, source_path, rel),
+    write: (root_path, rel, content, expected_mtime) => ipcRenderer.invoke('files:write', root_path, rel, content, expected_mtime),
+    search: (root_path, query) => ipcRenderer.invoke('files:search', root_path, query),
+    watch: (root_path) => ipcRenderer.invoke('files:watch', root_path),
+    unwatch: (root_path) => ipcRenderer.invoke('files:unwatch', root_path),
+    on_changed: (callback) => subscribe_channel('files:changed', callback),
     path_for_file: (file) => {
       try {
         if (webUtils && typeof webUtils.getPathForFile === 'function') return webUtils.getPathForFile(file) || '';
@@ -80,6 +89,9 @@ contextBridge.exposeInMainWorld('hub', {
       }
       return typeof file === 'object' && file ? file.path || '' : '';
     },
+  },
+  app: {
+    info: () => ipcRenderer.invoke('app:info'),
   },
   mobile: {
     get_state: () => ipcRenderer.invoke('mobile:get_state'),

@@ -65,10 +65,14 @@
   }
 
   // "Claude Code x3 · Codex x1": total count per agent, in first-seen order.
+  function seat_agent_id(seat) {
+    return typeof seat === 'string' ? seat : seat && typeof seat.agent_id === 'string' ? seat.agent_id : '';
+  }
+
   function summarize_seats(seats) {
     const order = [];
     const counts = new Map();
-    for (const agent_id of seats) {
+    for (const agent_id of seats.map(seat_agent_id)) {
       if (!counts.has(agent_id)) {
         counts.set(agent_id, 0);
         order.push(agent_id);
@@ -364,7 +368,7 @@
   function build_preset_logos(preset) {
     const row = make_element('div', { class_name: 'launch_preset_logos' });
     const unique = [];
-    for (const agent_id of preset.seats) {
+    for (const agent_id of preset.seats.map(seat_agent_id)) {
       if (!unique.includes(agent_id)) unique.push(agent_id);
     }
     for (const agent_id of unique) {
@@ -374,7 +378,7 @@
   }
 
   function build_preset_card(state, preset) {
-    const usable_count = preset.seats.filter((agent_id) => is_installed(state, agent_id)).length;
+    const usable_count = preset.seats.filter((seat) => is_installed(state, seat_agent_id(seat))).length;
     const missing_count = preset.seats.length - usable_count;
 
     const wrap = make_element('div', { class_name: 'launch_preset_wrap' });
@@ -536,7 +540,8 @@
     }
     state.saving = true;
     try {
-      await window.hub.presets.save({ name, seats: state.lineup.slice() });
+      const seats = state.lineup.map((agent_id, index) => Object.assign({ agent_id }, model_ref_for_seat(state, agent_id, state.models[index])));
+      await window.hub.presets.save({ name, use_worktree: state.is_repo && state.use_worktree, seats });
       if (state.closed) return;
       state.new_preset_open = false;
       state.new_preset_name = '';
@@ -575,14 +580,16 @@
   // Replaces the lineup with the preset's installed seats. Uninstalled agents are skipped.
   function apply_preset(state, preset) {
     if (state.closed || state.loading) return;
-    const usable = preset.seats.filter((agent_id) => is_installed(state, agent_id)).slice(0, MAX_SEATS);
+    const usable = preset.seats.filter((seat) => is_installed(state, seat_agent_id(seat))).slice(0, MAX_SEATS);
     if (usable.length === 0) {
       set_message(state, 'None of the agents in this preset are installed.', 'error');
       render(state);
       return;
     }
-    const skipped = preset.seats.length - preset.seats.filter((agent_id) => is_installed(state, agent_id)).length;
-    state.lineup = usable;
+    const skipped = preset.seats.length - usable.length;
+    state.lineup = usable.map(seat_agent_id);
+    state.models = usable.map((seat) => model_selection_from_seat(seat));
+    if (preset.use_worktree === true) state.use_worktree = true;
     sync_models(state);
     state.selected_preset_id = preset.id;
     if (skipped > 0) {
@@ -766,35 +773,32 @@
   // Builds the env vars one seat launches with, from its model/API choice and the stored providers.
   // Claude speaks ANTHROPIC_*; other agents get an <AGENT>_MODEL hint. Third-party endpoints use the
   // provider's kind: anthropic -> ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN, openai -> OPENAI_*.
-  function model_env_for_seat(state, agent_id, selection) {
-    const env = {};
+  // Ids only. The main process resolves the sealed key. Nothing here copies an API key into the seat.
+  function model_ref_for_seat(state, agent_id, selection) {
     const value = typeof selection === 'string' ? selection : MODEL_DEFAULT;
-    if (value === MODEL_DEFAULT) return env;
+    if (value === MODEL_DEFAULT) return { model_id: null, provider_id: null };
     const agent = find_catalog_agent(agent_id);
     if (value.startsWith('m:')) {
       const model = value.slice(2);
-      if (!agent || !Array.isArray(agent.models) || !agent.models.includes(model)) return env;
-      const key = agent_id === CLAUDE_AGENT_ID ? 'ANTHROPIC_MODEL' : `${agent_id.toUpperCase()}_MODEL`;
-      env[key] = model;
-      return env;
+      if (!agent || !Array.isArray(agent.models) || !agent.models.includes(model)) return { model_id: null, provider_id: null };
+      return { model_id: model, provider_id: null };
     }
-    if (!value.startsWith('p:')) return env;
+    if (!value.startsWith('p:')) return { model_id: null, provider_id: null };
     const rest = value.slice(2);
     const separator = rest.indexOf(':');
-    if (separator <= 0) return env;
-    const provider = state.providers.find((item) => item.id === rest.slice(0, separator));
-    if (!provider) return env;
+    if (separator <= 0) return { model_id: null, provider_id: null };
+    const provider_id = rest.slice(0, separator);
+    const provider = state.providers.find((item) => item.id === provider_id);
+    if (!provider) return { model_id: null, provider_id: null };
     const model = rest.slice(separator + 1);
-    if (provider.kind === 'anthropic') {
-      env.ANTHROPIC_BASE_URL = provider.base_url;
-      if (provider.api_key) env.ANTHROPIC_AUTH_TOKEN = provider.api_key;
-      if (model && model !== MODEL_DEFAULT) env.ANTHROPIC_MODEL = model;
-    } else {
-      env.OPENAI_BASE_URL = provider.base_url;
-      if (provider.api_key) env.OPENAI_API_KEY = provider.api_key;
-      if (model && model !== MODEL_DEFAULT) env.OPENAI_MODEL = model;
-    }
-    return env;
+    return { model_id: model || null, provider_id };
+  }
+
+  function model_selection_from_seat(seat) {
+    if (!seat || typeof seat !== 'object') return MODEL_DEFAULT;
+    if (seat.provider_id && seat.model_id) return `p:${seat.provider_id}:${seat.model_id}`;
+    if (seat.model_id) return `m:${seat.model_id}`;
+    return MODEL_DEFAULT;
   }
 
   // The section: header row with a manage toggle, then the stored APIs, then the add/edit form.
@@ -917,12 +921,12 @@
     const key_input = make_element('input', {
       class_name: 'launch_api_input',
       attrs: {
-        type: 'password', placeholder: 'API key (stored on this machine only)',
+        type: 'password', placeholder: draft.editing_id ? 'Leave blank to keep the saved key' : 'API key (sealed on this machine)',
         'aria-label': 'API key', 'data-focus-key': 'api_key_input', autocomplete: 'off',
       },
       on: { input: (event) => { state.api_draft.api_key = event.target.value; } },
     });
-    key_input.value = draft.api_key;
+    key_input.value = draft.editing_id ? '' : String(draft.api_key || '');
     const models_input = make_element('input', {
       class_name: 'launch_api_input',
       attrs: {
@@ -984,7 +988,7 @@
     const existing = editing_id ? state.providers.find((provider) => provider.id === editing_id) : null;
     state.api_draft_open = true;
     state.api_draft = existing
-      ? { editing_id: existing.id, name: existing.name, kind: existing.kind, base_url: existing.base_url, api_key: existing.api_key, models_text: existing.models.join(', ') }
+      ? { editing_id: existing.id, name: existing.name, kind: existing.kind, base_url: existing.base_url, api_key: '', models_text: existing.models.join(', ') }
       : { editing_id: null, name: '', kind: 'openai', base_url: '', api_key: '', models_text: '' };
     render(state);
     focus_by_key(state, 'api_name');
@@ -1014,6 +1018,11 @@
     };
     if (!payload.name) {
       set_message(state, 'Give the endpoint a name first.', 'error');
+      render(state);
+      return;
+    }
+    if (!payload.id && payload.api_key === '') {
+      set_message(state, 'An API key is required. It is sealed with the OS secret store and is not shown again.', 'error');
       render(state);
       return;
     }
@@ -1261,9 +1270,10 @@
     state.lineup.forEach((agent_id, index) => {
       const agent = find_catalog_agent(agent_id);
       if (!agent || !is_installed(state, agent_id)) return;
-      const env = model_env_for_seat(state, agent_id, state.models[index]);
-      const seat = { agent_id: agent.id, label: agent.label, command: agent.command };
-      if (Object.keys(env).length > 0) seat.env = env;
+      const seat = Object.assign(
+        { agent_id: agent.id, label: agent.label, command: agent.command },
+        model_ref_for_seat(state, agent_id, state.models[index])
+      );
       seats.push(seat);
     });
     if (seats.length === 0) {

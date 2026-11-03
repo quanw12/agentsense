@@ -25,6 +25,7 @@ const { WebSocketServer } = require('ws');
 const pty_manager = require('./pty_manager');
 const { get_hook_server } = require('./hook_server');
 const { check_commands } = require('./command_check');
+const { create_limiter } = require('./rate_limit');
 
 const TOKEN_HEX_LENGTH = 32;
 const STATIC_PATTERN = new RegExp(`^\\/m\\/([0-9a-f]{${TOKEN_HEX_LENGTH}})(\\/.*)?$`);
@@ -49,7 +50,11 @@ const CONTENT_TYPES = {
   '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
 // The page is served with a token in the URL, so nothing may be cached anywhere.
-const STATIC_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+const STATIC_HEADERS = {
+  'Cache-Control': 'no-store',
+  'Referrer-Policy': 'no-referrer',
+  'X-Content-Type-Options': 'nosniff',
+};
 
 function content_type_for(file_path) {
   return CONTENT_TYPES[path.extname(file_path).toLowerCase()] || 'application/octet-stream';
@@ -57,7 +62,11 @@ function content_type_for(file_path) {
 
 function send_plain(response, status, text) {
   if (response.headersSent) return;
-  response.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' });
+  response.writeHead(status, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Referrer-Policy': 'no-referrer',
+  });
   response.end(text);
 }
 
@@ -100,9 +109,7 @@ class MobileServer extends EventEmitter {
     this.host = null;
     this.bind_all = false;
     this.token = null;
-    this.fail_count = 0;
-    this.locked_until = 0;
-    this.lock_timer = null;
+    this.limiter = create_limiter({ limit: FAIL_LIMIT, lock_ms: FAIL_LOCKOUT_MS });
     this.clients = new Set(); // open WebSocket clients
     this.subscribed = false;
 
@@ -197,23 +204,13 @@ class MobileServer extends EventEmitter {
     return crypto.timingSafeEqual(Buffer.from(candidate, 'utf8'), Buffer.from(this.token, 'utf8'));
   }
 
-  is_locked() {
-    return Date.now() < this.locked_until;
+  is_locked(request) {
+    return this.limiter.is_locked(request || { socket: { remoteAddress: 'unknown' } });
   }
 
-  // Wrong tokens are rate limited together (the token is not per client), so guessing is pointless.
-  note_fail() {
-    if (this.is_locked()) return;
-    this.fail_count += 1;
-    if (this.fail_count >= FAIL_LIMIT) {
-      this.fail_count = 0;
-      this.locked_until = Date.now() + FAIL_LOCKOUT_MS;
-      if (this.lock_timer) clearTimeout(this.lock_timer);
-      this.lock_timer = setTimeout(() => {
-        this.locked_until = 0;
-      }, FAIL_LOCKOUT_MS);
-      if (typeof this.lock_timer.unref === 'function') this.lock_timer.unref();
-    }
+  // Wrong tokens are counted per remote address. One source cannot lock out another.
+  note_fail(request) {
+    this.limiter.note_fail(request || { socket: { remoteAddress: 'unknown' } });
   }
 
   // One subscription for the life of the process; the fan-out is filtered per client.
@@ -266,11 +263,12 @@ class MobileServer extends EventEmitter {
       request.resume();
       return send_plain(response, 404, 'not found');
     }
-    if (!this.token || !this.token_matches(match[1]) || this.is_locked()) {
-      this.note_fail();
+    if (!this.token || !this.token_matches(match[1]) || this.is_locked(request)) {
+      this.note_fail(request);
       request.resume();
       return send_plain(response, 404, 'not found');
     }
+    this.limiter.note_ok(request);
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       request.resume();
       return send_plain(response, 405, 'method not allowed');
@@ -322,9 +320,9 @@ class MobileServer extends EventEmitter {
       socket.destroy();
       return;
     }
-    if (!this.token || !this.token_matches(match[1]) || this.is_locked()) {
-      this.note_fail();
-      socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+    if (!this.token || !this.token_matches(match[1]) || this.is_locked(request)) {
+      this.note_fail(request);
+      socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n');
       socket.destroy();
       return;
     }
@@ -429,8 +427,13 @@ class MobileServer extends EventEmitter {
     if (!this.find_terminal(msg.terminal_id)) {
       return this.send_to(ws, { type: 'error', message: 'unknown terminal' });
     }
-    pty_manager.resize_terminal(msg.terminal_id, clamp_size(msg.cols, DEFAULT_COLS), clamp_size(msg.rows, DEFAULT_ROWS));
-    return undefined;
+    const result = pty_manager.resize_terminal(
+      msg.terminal_id,
+      clamp_size(msg.cols, DEFAULT_COLS),
+      clamp_size(msg.rows, DEFAULT_ROWS),
+      'mobile'
+    );
+    return this.send_to(ws, { type: 'resized', terminal_id: msg.terminal_id, result });
   }
 
   // The phone picks only a workspace id and an agent id; the folder and the command line come from

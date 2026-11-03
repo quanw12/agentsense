@@ -1,22 +1,22 @@
-// ipcMain handlers for the workspace file panel:
-//  files:list(root_path, rel)         - one folder level of entries
-//  files:read(root_path, rel, limit)  - what the viewer shows: text content, or a file URL for previews
-//  files:render_document(root, rel)   - a .docx converted to HTML for the viewer
-//  files:open_external(root, rel)     - opens the file with its default app
-//  files:reveal(root, rel)            - shows the file in File Explorer
-//  files:copy_in(root_path, sources)  - copies files/dropped folders from the OS into the workspace
-// Every relative path is resolved and constrained to root_path, so the page cannot escape the workspace.
+// ipcMain handlers for the workspace file panel.
+// Every relative path is resolved and constrained to the real workspace root, so a junction
+// or symlink cannot be used to read or write outside that root.
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { ipcMain, shell } = require('electron');
+function electron_bits() {
+  return require('electron');
+}
 
-const TEXT_MAX_BYTES = 1024 * 512; // the viewer shows at most this much of a file
+const { resolve_inside } = require('./path_guard');
+
+const TEXT_MAX_BYTES = 1024 * 512;
 const COPY_MAX_NAME = 180;
-const COPY_MAX_ITEMS = 100;
-const DOCUMENT_MAX_BYTES = 1024 * 1024 * 40; // larger .docx files are not converted
+const COPY_BATCH_MAX = 200;
+const SEARCH_MAX = 200;
+const DOCUMENT_MAX_BYTES = 1024 * 1024 * 40;
+const WATCH_DEBOUNCE_MS = 200;
 
-// Files the viewer previews natively (the renderer loads them by file URL).
 const PREVIEW_KINDS = {
   '.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.gif': 'image', '.webp': 'image', '.bmp': 'image',
   '.ico': 'image', '.svg': 'image', '.avif': 'image',
@@ -25,77 +25,63 @@ const PREVIEW_KINDS = {
   '.mp3': 'audio', '.wav': 'audio', '.ogg': 'audio', '.m4a': 'audio', '.flac': 'audio', '.aac': 'audio',
   '.docx': 'docx',
 };
-// Office formats without a built-in preview: the viewer offers "Open with default app".
 const OFFICE_EXTS = new Set([
   '.doc', '.dot', '.rtf', '.odt', '.xls', '.xlsx', '.xlsm', '.ods', '.ppt', '.pptx', '.odp', '.pages', '.numbers', '.key',
 ]);
+const SKIP_DIR = new Set(['node_modules', '.git']);
 
-function to_rel(root, target) {
-  const rel = path.relative(root, target);
-  if (rel === '') return '';
-  if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
-  return rel.split(path.sep).join('/');
+const watches = new Map();
+const copy_jobs = new Map();
+let copy_serial = 0;
+
+function require_root(root_path) {
+  const resolved = resolve_inside(root_path, '');
+  if (!resolved) throw new Error(`workspace folder does not exist: ${root_path}`);
+  return resolved;
 }
 
-function is_within(root, target) {
-  const rel = path.relative(root, target);
-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-}
-
-// Inside(root, rel or absolute) -> { root, rel, path } or null.
-// An absolute target that lives under root is accepted (re-attaching keeps absolute paths simple).
 function resolve_under(root, value) {
-  if (typeof value !== 'string' || value.trim() === '') return { root, rel: '', path: root };
-  const target = path.isAbsolute(value) ? path.resolve(value) : path.resolve(root, value);
-  if (!target.toLowerCase().startsWith(root.toLowerCase())) return null;
-  const rel = to_rel(root, target);
-  if (rel === null) return null;
-  return { root, rel, path: target };
+  return resolve_inside(root, value);
 }
 
-function entry_stat(entry_path) {
-  try {
-    return fs.statSync(entry_path);
-  } catch (error) {
-    return null;
-  }
+function heavy_dir(name) {
+  return SKIP_DIR.has(name);
 }
 
-function list_dir(root_path, rel) {
-  const root = path.resolve(root_path);
-  const root_stat = entry_stat(root);
-  if (!root_stat || !root_stat.isDirectory()) throw new Error(`workspace folder does not exist: ${root}`);
-  const resolved = resolve_under(root, rel);
+async function list_dir(root_path, rel) {
+  const root_info = require_root(root_path);
+  const resolved = resolve_inside(root_info.path, rel || '');
   if (!resolved) throw new Error('that path is outside the workspace');
-  let entries = null;
+  let entries = [];
   try {
-    entries = fs.readdirSync(resolved.path, { withFileTypes: true });
+    entries = await fs.promises.readdir(resolved.path, { withFileTypes: true });
   } catch (error) {
     if (resolved.rel !== '' || error.code !== 'ENOENT') throw error;
     return [];
   }
   const items = [];
   for (const entry of entries) {
-    const item_path = path.join(resolved.path, entry.name);
-    if (!is_within(root, item_path)) continue;
-    const stat = entry_stat(item_path);
-    if (!stat) continue; // vanished or unreadable; skip quietly
+    if (heavy_dir(entry.name) && resolved.rel === '') {
+      items.push({ name: entry.name, rel: entry.name, kind: 'dir', size: 0, modified: 0, skipped: true });
+      continue;
+    }
+    const child = resolve_inside(root_info.path, path.join(resolved.path, entry.name));
+    if (!child) continue;
+    let stat = null;
+    try { stat = await fs.promises.stat(child.path); } catch (error) { stat = null; }
+    if (!stat) continue;
     items.push({
       name: entry.name,
-      rel: to_rel(root, item_path),
+      rel: child.rel,
       kind: stat.isDirectory() ? 'dir' : 'file',
       size: stat.isDirectory() ? 0 : stat.size,
       modified: stat.mtimeMs,
     });
   }
-  // Folders first, then files; both alphabetical without case tricks.
-  items.sort((a, b) =>
-    a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1
-  );
+  items.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1));
   return items;
 }
 
-// Guesses text vs binary by extension and a quick zero-byte-head scan.
 function looks_textual(file_path, size, ext) {
   const binary_exts = new Set([
     '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.exe', '.dll', '.zip', '.gz',
@@ -115,54 +101,44 @@ function looks_textual(file_path, size, ext) {
   }
 }
 
-// One existing file under root (never a folder) -> { rel, path, stat, ext }.
 function resolve_file(root_path, rel) {
-  const root = path.resolve(root_path);
-  const resolved = resolve_under(root, rel);
+  const root_info = require_root(root_path);
+  const resolved = resolve_inside(root_info.path, rel);
   if (!resolved) throw new Error('that path is outside the workspace');
   if (resolved.rel === '') throw new Error('cannot read the workspace folder itself');
-  const stat = entry_stat(resolved.path);
+  let stat = null;
+  try { stat = fs.statSync(resolved.path); } catch (error) { stat = null; }
   if (!stat) throw new Error(`file not found: ${resolved.rel}`);
   if (stat.isDirectory()) throw new Error('that is a folder; open a file instead');
-  return { rel: resolved.rel, path: resolved.path, stat, ext: path.extname(resolved.path).toLowerCase() };
+  return { rel: resolved.rel, path: resolved.path, stat, ext: path.extname(resolved.path).toLowerCase(), root: root_info.path };
 }
 
-// kind: 'text' | 'image' | 'pdf' | 'video' | 'audio' | 'docx' | 'office' | 'binary' | 'too_large'.
-// Previewable kinds carry url (a file:// URL); text carries content.
-function read_file(root_path, rel, limit) {
+function read_file(root_path, rel) {
   const resolved = resolve_file(root_path, rel);
   const stat = resolved.stat;
   const preview = PREVIEW_KINDS[resolved.ext];
+  const base = { path: resolved.rel, size: stat.size, mtime: stat.mtimeMs };
   if (preview) {
-    return {
-      path: resolved.rel,
-      kind: preview,
-      url: pathToFileURL(resolved.path).href,
-      truncated: false,
-      binary: true,
-      size: stat.size,
-      content: '',
-    };
+    return { ...base, kind: preview, url: pathToFileURL(resolved.path).href, truncated: false, binary: true, content: '' };
   }
   if (OFFICE_EXTS.has(resolved.ext)) {
-    return { path: resolved.rel, kind: 'office', truncated: false, binary: true, size: stat.size, content: '' };
+    return { ...base, kind: 'office', truncated: false, binary: true, content: '' };
   }
   if (stat.size > TEXT_MAX_BYTES * 8) {
-    return { path: resolved.rel, kind: 'too_large', truncated: true, too_large: true, size: stat.size, content: '' };
+    return { ...base, kind: 'too_large', truncated: true, too_large: true, content: '' };
   }
   if (!looks_textual(resolved.path, stat.size, resolved.ext)) {
-    return { path: resolved.rel, kind: 'binary', truncated: false, binary: true, size: stat.size, content: '' };
+    return { ...base, kind: 'binary', truncated: false, binary: true, content: '' };
   }
   const handle = fs.openSync(resolved.path, 'r');
   try {
     const buf = Buffer.alloc(Math.min(TEXT_MAX_BYTES, stat.size));
     fs.readSync(handle, buf, 0, buf.length, 0);
     return {
-      path: resolved.rel,
+      ...base,
       kind: 'text',
       truncated: stat.size > buf.length,
       binary: false,
-      size: stat.size,
       content: buf.toString('utf8'),
     };
   } finally {
@@ -170,7 +146,6 @@ function read_file(root_path, rel, limit) {
   }
 }
 
-// mammoth is loaded on first use, so the app starts without it.
 async function render_document(root_path, rel) {
   const resolved = resolve_file(root_path, rel);
   if (resolved.ext !== '.docx') throw new Error('only .docx documents can be previewed');
@@ -182,73 +157,240 @@ async function render_document(root_path, rel) {
 
 async function open_external(root_path, rel) {
   const resolved = resolve_file(root_path, rel);
-  const failure = await shell.openPath(resolved.path);
+  const failure = await electron_bits().shell.openPath(resolved.path);
   if (failure) throw new Error(failure);
   return true;
 }
 
 function reveal(root_path, rel) {
   const resolved = resolve_file(root_path, rel);
-  shell.showItemInFolder(resolved.path);
+  electron_bits().shell.showItemInFolder(resolved.path);
   return true;
 }
 
-// A dropped absolute path is only copied when the source exists; the copy keeps the top-level name
-// and never overwrites silently: "name", "name (1)", "name (2)"...
+function emit_changed(payload) {
+  const { broadcast } = require('./ipc_terminals');
+  broadcast('files:changed', payload);
+}
+
+function watch_root(root_path) {
+  const root_info = require_root(root_path);
+  if (watches.has(root_info.path)) return { root: root_info.path };
+  const watcher = fs.watch(root_info.path, { recursive: true }, (_event, filename) => {
+    const name = filename ? String(filename) : '';
+    if (/(^|[\\/])(node_modules|\.git)([\\/]|$)/.test(name)) return;
+    const entry = watches.get(root_info.path);
+    if (!entry) return;
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      emit_changed({ root: root_info.path, rel: name.split(path.sep).join('/') });
+    }, WATCH_DEBOUNCE_MS);
+    if (typeof entry.timer.unref === 'function') entry.timer.unref();
+  });
+  watcher.on('error', () => unwatch_root(root_info.path));
+  watches.set(root_info.path, { watcher, timer: null });
+  return { root: root_info.path };
+}
+
+function unwatch_root(root_path) {
+  const resolved = resolve_inside(root_path, '') || { path: path.resolve(root_path) };
+  const entry = watches.get(resolved.path);
+  if (!entry) return false;
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.watcher.close();
+  watches.delete(resolved.path);
+  return true;
+}
+
 function unique_destination(dir_path, base_name) {
   const clean = String(base_name || '').replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_').slice(0, COPY_MAX_NAME) || 'file';
   let candidate = clean;
   let index = 1;
-  while (entry_stat(path.join(dir_path, candidate))) {
+  while (fs.existsSync(path.join(dir_path, candidate))) {
     const dot = clean.lastIndexOf('.');
     const stem = dot > 0 ? clean.slice(0, dot) : clean;
     const ext = dot > 0 ? clean.slice(dot) : '';
     candidate = `${stem} (${index})${ext}`;
     index += 1;
+    if (index > 1000) throw new Error('too many name collisions');
   }
   return path.join(dir_path, candidate);
 }
 
-// sources: [{ path: absolute OS path, name? }]. Returns per-item outcomes for the UI banner.
-function copy_in(root_path, sources) {
-  const root = path.resolve(root_path);
-  const root_stat = entry_stat(root);
-  if (!root_stat || !root_stat.isDirectory()) throw new Error(`workspace folder does not exist: ${root}`);
-  const list = Array.isArray(sources) ? sources.slice(0, COPY_MAX_ITEMS) : [];
-  const results = [];
-  for (const source of list) {
-    if (!source || typeof source.path !== 'string' || source.path.trim() === '') {
-      results.push({ ok: false, name: '(unknown)', message: 'no path given' });
-      continue;
+function reject_batch(list, message) {
+  return {
+    rejected: true,
+    results: list.map((source, index) => ({
+      ok: false,
+      index,
+      name: source && (source.name || source.path) ? path.basename(String(source.name || source.path)) : '(unknown)',
+      message,
+    })),
+  };
+}
+
+async function copy_in(root_path, sources, options) {
+  const root_info = require_root(root_path);
+  const list = Array.isArray(sources) ? sources : [];
+  const job_id = `copy-${++copy_serial}`;
+  const job = { cancelled: false };
+  copy_jobs.set(job_id, job);
+  const stage = path.join(root_info.path, '.agentsense-import');
+  try {
+    if (list.length > COPY_BATCH_MAX) {
+      return { ...reject_batch(list, `batch rejected before copy: ${list.length} items exceeds ${COPY_BATCH_MAX}`), root: root_info.path, job_id };
     }
-    const from = path.resolve(source.path);
-    const from_stat = entry_stat(from);
-    if (!from_stat) {
-      results.push({ ok: false, name: source.name || from, message: 'source not found' });
-      continue;
-    }
-    const destination = unique_destination(root, path.basename(from));
-    try {
-      if (from_stat.isDirectory()) {
-        fs.cpSync(from, destination, { recursive: true });
-      } else {
-        fs.copyFileSync(from, destination);
+    if (list.length === 0) return { results: [], root: root_info.path, rejected: false, job_id };
+    await fs.promises.mkdir(stage, { recursive: true });
+    const stage_real = resolve_inside(root_info.path, stage);
+    if (!stage_real) throw new Error('import folder escaped the workspace');
+    const results = [];
+    for (let index = 0; index < list.length; index += 1) {
+      const source = list[index];
+      if (job.cancelled) {
+        results.push({ ok: false, index, name: source && source.name ? source.name : '(cancelled)', message: 'cancelled' });
+        continue;
       }
-      results.push({ ok: true, name: path.basename(destination), message: '' });
-    } catch (error) {
-      results.push({ ok: false, name: path.basename(from), message: error.message });
+      if (!source || typeof source.path !== 'string' || source.path.trim() === '') {
+        results.push({ ok: false, index, name: '(unknown)', message: 'no path given' });
+        continue;
+      }
+      const from = path.resolve(source.path);
+      let from_stat = null;
+      try { from_stat = await fs.promises.stat(from); } catch (error) { from_stat = null; }
+      if (!from_stat) {
+        results.push({ ok: false, index, name: source.name || path.basename(from), message: 'source not found' });
+        continue;
+      }
+      const destination = unique_destination(stage_real.path, path.basename(from));
+      const dest_real = resolve_inside(root_info.path, destination);
+      if (!dest_real) {
+        results.push({ ok: false, index, name: path.basename(from), message: 'destination left the workspace' });
+        continue;
+      }
+      try {
+        if (from_stat.isDirectory()) await fs.promises.cp(from, dest_real.path, { recursive: true });
+        else await fs.promises.copyFile(from, dest_real.path);
+        results.push({ ok: true, index, name: path.basename(dest_real.path), rel: dest_real.rel, message: '' });
+      } catch (error) {
+        results.push({ ok: false, index, name: path.basename(from), message: error.message });
+      }
+    }
+    return { results, root: root_info.path, rejected: false, job_id };
+  } finally {
+    copy_jobs.delete(job_id);
+  }
+}
+
+function cancel_copy(job_id) {
+  const job = copy_jobs.get(job_id);
+  if (!job) return false;
+  job.cancelled = true;
+  return true;
+}
+
+// Copies one source to root/rel when that file is absent. Never overwrites.
+async function import_mapped(root_path, source_path, rel) {
+  const root_info = require_root(root_path);
+  if (typeof rel !== 'string' || rel.trim() === '' || rel.split(/[\\/]/).includes('..')) {
+    throw new Error('mapped path is not inside the workspace');
+  }
+  const destination = resolve_inside(root_info.path, rel);
+  if (!destination || destination.rel === '') throw new Error('mapped path is not inside the workspace');
+  if (fs.existsSync(destination.path)) {
+    return { ok: false, existed: true, rel: destination.rel, message: 'target already exists; not overwritten' };
+  }
+  await fs.promises.mkdir(path.dirname(destination.path), { recursive: true });
+  await fs.promises.copyFile(source_path, destination.path);
+  const after = resolve_inside(root_info.path, destination.rel);
+  if (!after) {
+    await fs.promises.rm(destination.path, { force: true }).catch(() => null);
+    throw new Error('mapped copy left the workspace');
+  }
+  return { ok: true, existed: false, rel: after.rel, message: '' };
+}
+
+async function write_text(root_path, rel, content, expected_mtime) {
+  if (typeof content !== 'string') throw new Error('content must be text');
+  if (Buffer.byteLength(content, 'utf8') > TEXT_MAX_BYTES * 8) throw new Error('file is too large to save here');
+  const root_info = require_root(root_path);
+  const destination = resolve_inside(root_info.path, rel);
+  if (!destination || destination.rel === '') throw new Error('that path is outside the workspace');
+  let current = null;
+  try { current = await fs.promises.stat(destination.path); } catch (error) { current = null; }
+  if (current && current.isDirectory()) throw new Error('that is a folder');
+  if (current && expected_mtime != null && Number.isFinite(Number(expected_mtime))) {
+    if (Math.abs(current.mtimeMs - Number(expected_mtime)) > 1) {
+      const disk = await fs.promises.readFile(destination.path);
+      return {
+        conflict: true,
+        mtime: current.mtimeMs,
+        content: disk.subarray(0, TEXT_MAX_BYTES).toString('utf8'),
+      };
     }
   }
-  return { results, root };
+  if (!current) {
+    const parent = resolve_inside(root_info.path, path.dirname(destination.path));
+    if (!parent) throw new Error('that path is outside the workspace');
+    await fs.promises.mkdir(parent.path, { recursive: true });
+  }
+  await fs.promises.writeFile(destination.path, content, 'utf8');
+  const stat = await fs.promises.stat(destination.path);
+  return { ok: true, conflict: false, mtime: stat.mtimeMs, rel: destination.rel };
+}
+
+async function search_files(root_path, query) {
+  const root_info = require_root(root_path);
+  const needle = String(query || '').trim().toLowerCase();
+  const found = [];
+  async function walk(dir, rel) {
+    if (found.length >= SEARCH_MAX) return;
+    let entries = [];
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch (error) { return; }
+    for (const entry of entries) {
+      if (found.length >= SEARCH_MAX) return;
+      if (heavy_dir(entry.name)) continue;
+      const child_rel = rel ? `${rel}/${entry.name}` : entry.name;
+      const child = resolve_inside(root_info.path, path.join(dir, entry.name));
+      if (!child) continue;
+      if (entry.isDirectory()) await walk(child.path, child.rel);
+      else if (!needle || entry.name.toLowerCase().includes(needle) || child.rel.toLowerCase().includes(needle)) {
+        found.push({ name: entry.name, rel: child.rel });
+      }
+    }
+  }
+  await walk(root_info.path, '');
+  return { results: found, truncated: found.length >= SEARCH_MAX };
 }
 
 function register_file_ipc() {
+  const { ipcMain } = electron_bits();
   ipcMain.handle('files:list', (_event, root_path, rel) => list_dir(root_path, rel));
-  ipcMain.handle('files:read', (_event, root_path, rel, limit) => read_file(root_path, rel, limit));
+  ipcMain.handle('files:read', (_event, root_path, rel) => read_file(root_path, rel));
+  ipcMain.handle('files:write', (_event, root_path, rel, content, expected_mtime) => write_text(root_path, rel, content, expected_mtime));
+  ipcMain.handle('files:search', (_event, root_path, query) => search_files(root_path, query));
+  ipcMain.handle('files:watch', (_event, root_path) => watch_root(root_path));
+  ipcMain.handle('files:unwatch', (_event, root_path) => unwatch_root(root_path));
   ipcMain.handle('files:render_document', (_event, root_path, rel) => render_document(root_path, rel));
   ipcMain.handle('files:open_external', (_event, root_path, rel) => open_external(root_path, rel));
   ipcMain.handle('files:reveal', (_event, root_path, rel) => reveal(root_path, rel));
   ipcMain.handle('files:copy_in', (_event, root_path, sources) => copy_in(root_path, sources));
+  ipcMain.handle('files:cancel_copy', (_event, job_id) => cancel_copy(job_id));
+  ipcMain.handle('files:import_mapped', (_event, root_path, source_path, rel) => import_mapped(root_path, source_path, rel));
 }
 
-module.exports = { register_file_ipc, list_dir, read_file, render_document, copy_in, resolve_under };
+module.exports = {
+  register_file_ipc,
+  list_dir,
+  read_file,
+  write_text,
+  search_files,
+  copy_in,
+  import_mapped,
+  resolve_under,
+  watch_root,
+  unwatch_root,
+  cancel_copy,
+  COPY_BATCH_MAX,
+};

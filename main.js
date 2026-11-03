@@ -2,7 +2,7 @@
 // kills every pty when the app quits.
 const path = require('path');
 
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain } = require('electron');
 const { migrate_legacy_state } = require('./src/main/migrate_state');
 
 // Product identity. setName must run before anything reads userData, because the default userData
@@ -157,6 +157,12 @@ if (!got_lock) {
   app.whenReady().then(async () => {
     // Before any window exists: the default application menu is not created.
     Menu.setApplicationMenu(null);
+    ipcMain.handle('app:info', () => ({
+      name: 'AgentSense',
+      version: app.getVersion(),
+      platform: 'win32-x64',
+      commit: process.env.AGENTSENSE_COMMIT || null,
+    }));
     register_workspace_ipc();
     register_agent_ipc();
     register_clipboard_ipc();
