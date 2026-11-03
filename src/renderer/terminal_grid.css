@@ -517,6 +517,52 @@
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
+.tf-tabs {
+  display: flex;
+  gap: 4px;
+  overflow: auto;
+  padding: 4px 6px 0;
+  background: #111;
+}
+.tf-file-tab-wrap { display: inline-flex; align-items: center; }
+.tf-file-tab, .tf-file-tab-close {
+  border: 0;
+  background: transparent;
+  color: #ccc;
+  font: 12px "Segoe UI", sans-serif;
+}
+.tf-file-tab-active { color: #fff; }
+.tf-editor {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  border: 0;
+  background: #000;
+  color: #ececec;
+  font: 13px/1.45 "Cascadia Mono", Consolas, monospace;
+  padding: 8px;
+}
+.tf-save { margin-left: 8px; color: #9a9; }
+.tg-quick {
+  position: absolute;
+  z-index: 20;
+  left: 12px;
+  right: 12px;
+  top: 8px;
+  background: #161616;
+  border: 1px solid #333;
+  padding: 8px;
+}
+.tg-quick-input, .tg-quick-item {
+  width: 100%;
+  box-sizing: border-box;
+  background: #000;
+  color: #eee;
+  border: 1px solid #333;
+}
+.tg-version { margin-left: auto; color: #888; font-size: 12px; }
+
 /* While dragging anywhere over the grid, keep the terminal text cursor quiet. */
 .tg-pane.tg-drop-target .xterm {
   cursor: copy;

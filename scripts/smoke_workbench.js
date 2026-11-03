@@ -64,19 +64,29 @@ async function run(window) {
   await until(() => js('Boolean(document.querySelector(".tg-view-active .tf-text"))'), 'text preview');
   await js(`document.querySelector('.tg-view-active .fp-row[data-path="brief.txt"]').click()`);
   check('opening a file creates one reusable tab', await js('document.querySelectorAll(".tg-view-active .tg-file-pane").length === 1 && document.querySelectorAll(".tg-view-active [role=tab]").length === 3'));
-  check('file contents render as text', await js('document.querySelector(".tg-view-active .tf-text").textContent.includes("Drag this file")'));
-  await js('document.querySelector("[data-action=toggle_mode]").click()');
-  check('Tab view displays only the selected file', await js('document.querySelectorAll(".tg-view-active .tg-pane:not([hidden])").length === 1 && !document.querySelector(".tg-view-active .tg-file-pane").hidden'));
-  await js('document.querySelector(".tg-view-active [role=tab]").click()');
-  check('agent tab switches back to its live terminal', await js('document.querySelectorAll(".tg-view-active .tg-pane:not([hidden])").length === 1 && !document.querySelector(".tg-view-active .tg-pane[data-terminal-id]").hidden'));
+  check('file contents render as text', await js(`(() => {
+    const node = document.querySelector('.tg-view-active .tf-text');
+    return ((node && (node.value || node.textContent)) || '').includes('Drag this file');
+  })()`));
+  check('tab view control is gone', await js('!document.querySelector("[data-action=toggle_mode]")'));
+  const bounds_before = await js(`JSON.stringify(Array.from(document.querySelectorAll('.tg-view-active .tg-pane')).map(p => {
+    const r = p.getBoundingClientRect();
+    return { id: p.id, w: Math.round(r.width), h: Math.round(r.height), hidden: p.hidden };
+  }))`);
+  for (let i = 0; i < 20; i += 1) {
+    await js(`document.querySelectorAll('.tg-view-active [role=tab]')[${i % 3}].click()`);
+  }
+  await js(`document.querySelector('.tg-view-active .tg-pane-titlebar').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}));`);
+  const bounds_after = await js(`JSON.stringify(Array.from(document.querySelectorAll('.tg-view-active .tg-pane')).map(p => {
+    const r = p.getBoundingClientRect();
+    return { id: p.id, w: Math.round(r.width), h: Math.round(r.height), hidden: p.hidden };
+  }))`);
+  const before = JSON.parse(bounds_before);
+  const after = JSON.parse(bounds_after);
+  check('focus and double-click keep every pane visible', after.length === before.length && after.every((pane) => pane.hidden === false));
+  check('focus does not move pane bounds by more than 1px', after.every((pane, index) => Math.abs(pane.w - before[index].w) <= 1 && Math.abs(pane.h - before[index].h) <= 1));
   await js(`document.querySelector('.tg-root').dispatchEvent(new KeyboardEvent('keydown', {key:'Tab', ctrlKey:true, bubbles:true}));`);
-  check('Ctrl+Tab selects the next agent', await js('document.querySelectorAll(".tg-view-active [role=tab]")[1].getAttribute("aria-selected") === "true"'));
-  await js(`document.querySelector('[data-action=toggle_mode]').click();
-    document.querySelector('.tg-view-active .tg-pane-titlebar').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}));
-    document.querySelector('.tg-view-active .tg-tab:last-child [role=tab]').click();`);
-  check('tabs switch correctly while a pane is maximized', await js('!document.querySelector(".tg-view-active .tg-file-pane").hidden && document.querySelectorAll(".tg-view-active .tg-pane:not([hidden])").length === 1'));
-  await js(`document.querySelector('.tg-view-active .tg-file-pane .tg-pane-titlebar').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}));`);
-  check('Split view restores all panes', await js('document.querySelectorAll(".tg-view-active .tg-pane:not([hidden])").length === 3'));
+  check('Ctrl+Tab selects another agent without hiding panes', await js('document.querySelectorAll(".tg-view-active .tg-pane:not([hidden])").length === 3'));
   const before_cols = await js('Number(document.querySelector(".tg-view-active .tg-pane[data-terminal-id]").dataset.cols)');
   await js('document.querySelector("[data-action=toggle_files]").click()');
   await delay(250);
@@ -85,7 +95,8 @@ async function run(window) {
     document.querySelector('.tg-view-active .tg-files-resize').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft', bubbles:true}));`);
   check('explorer shortcut and keyboard resizing persist', await js(`(() => {
     const saved = JSON.parse(localStorage.getItem('agentsense.workbench'));
-    return saved.files_open && saved.files_width === 290;
+    const workspace = saved.workspaces && saved.workspaces[testWorkspace.id];
+    return workspace && workspace.files_open === true && workspace.files_width === 290;
   })()`));
 
   // Capture renderer-to-PTY writes without replacing the real IPC. Enter is never sent for a drop.
@@ -133,8 +144,9 @@ async function run(window) {
   })()`);
   await until(() => writes.some((w) => w.id === info.terminal_id && w.data.includes('brief')), 'worktree drop');
   const path_writes = writes.filter((w) => w.data.includes('brief'));
-  check('drop copies into the target worktree without overwriting tracked files', fs.existsSync(path.join(info.cwd, 'brief (1).txt')) &&
-    path_writes.length === 1 && path_writes.every((w) => w.id === info.terminal_id && w.data.includes(info.cwd) && !/[\r\n]/.test(w.data)));
+  check('drop references the worktree file and does not overwrite it', !fs.existsSync(path.join(info.cwd, 'brief (1).txt')) &&
+    fs.existsSync(path.join(info.cwd, 'brief.txt')) &&
+    path_writes.length === 1 && path_writes.every((w) => w.id === info.terminal_id && w.data.includes(info.cwd) && w.data.includes('brief.txt') && !/[\r\n]/.test(w.data)));
   // OS-file drops use Electron's native File->path resolver. The synthetic File uses the legacy fallback.
   writes.length = 0;
   await js(`(() => {
@@ -143,8 +155,9 @@ async function run(window) {
     dt.items.add(file);
     document.querySelector('.tg-view-active .tg-pane[data-terminal-id="${info.terminal_id}"]').dispatchEvent(new DragEvent('drop', {dataTransfer:dt, bubbles:true, cancelable:true}));
   })()`);
-  await until(() => fs.existsSync(path.join(info.cwd, 'external brief.txt')), 'external drop copied');
-  check('external files land in the receiving worktree', fs.existsSync(path.join(info.cwd, 'external brief.txt')) && !fs.existsSync(path.join(fixture, 'external brief.txt')));
+  const staged_external = path.join(info.cwd, '.agentsense-import', 'external brief.txt');
+  await until(() => fs.existsSync(staged_external), 'external drop copied');
+  check('external files land in the receiving worktree import folder', fs.existsSync(staged_external) && !fs.existsSync(path.join(fixture, 'external brief.txt')));
   ipc.removeListener('terminals:write', observe_write);
 
   await js(`document.querySelector('.tg-view-active .fp-row[data-path="preview.png"]').click()`);
@@ -155,18 +168,17 @@ async function run(window) {
     console.log(`Screenshot: ${process.env.AGENTSENSE_SCREENSHOT}`);
   }
 
-  await js(`document.querySelector('[data-action=toggle_files]').click();
-    document.querySelector('[data-action=toggle_mode]').click();`);
+  await js(`document.querySelector('[data-action=toggle_files]').click();`);
   await contents.reload();
   await until(() => js('Boolean(window.__grid && document.querySelector(".tg-view-active .tg-pane"))'), 'renderer reload');
-  check('panel visibility, width and mode survive reload', await js(`!document.querySelector('.tg-view-active').classList.contains('tg-with-files') &&
-    document.querySelector('[data-action=toggle_mode]').textContent === 'Split view' &&
+  check('panel visibility and width survive reload', await js(`!document.querySelector('.tg-view-active').classList.contains('tg-with-files') &&
+    !document.querySelector('[data-action=toggle_mode]') &&
     document.querySelector('.tg-root').style.getPropertyValue('--files-width') === '290px'`));
   check('sessions reattach without respawning', pty.list_terminals().length === 3);
   // Workspace created after hiding explorer must inherit its hidden state.
   await js(`window.otherWorkspace = await window.hub.workspaces.add(${JSON.stringify(outside)});
     window.__grid.show_workspace(otherWorkspace);`);
-  check('new workspaces honor the hidden explorer preference', await js('!document.querySelector(".tg-view-active").classList.contains("tg-with-files")'));
+  check('another workspace keeps its own files panel', await js('document.querySelector(".tg-view-active").classList.contains("tg-with-files")'));
   await js('await window.__show_launch_page(otherWorkspace.id)');
   await until(() => js('Boolean(document.querySelector(".launch_custom_form"))'), 'custom CLI form');
   await js(`document.querySelector('.launch_custom_form input').value = 'powershell.exe';
@@ -182,7 +194,7 @@ async function run(window) {
   await until(() => pty.list_terminals().every((t) => !t.alive), 'test shells exit');
   await js('for (const s of await window.hub.terminals.list()) await window.hub.terminals.kill(s.terminal_id)');
   // The worktree contains dropped files, so normal close must preserve it.
-  check('closing an agent preserves its modified worktree', fs.existsSync(path.join(info.cwd, 'external brief.txt')));
+  check('closing an agent preserves its modified worktree', fs.existsSync(staged_external));
   console.log(`\nWorkbench smoke: ${failures ? `${failures} failed` : 'all checks passed'}`);
 }
 
