@@ -1364,6 +1364,7 @@
     const status = create_el('span', 'tf-save', file.conflict ? 'conflict' : (file.dirty ? 'edited' : 'saved'));
     meta.append(status);
     file.status_el = status;
+    if (file.conflict) ensure_discard_button(grid, pane, file);
     if (file.editable !== false) {
       text.addEventListener('input', () => {
         file.edit_generation = (file.edit_generation || 0) + 1;
@@ -1412,6 +1413,7 @@
         if (file.buffer == null) file.buffer = snapshot;
         if (file.status_el) file.status_el.textContent = 'conflict';
         show_banner(grid, `${file.name} changed on disk. Your edits are still in the editor and were not overwritten.`);
+        ensure_discard_button(grid, pane, file);
         render_file_tabs(grid, pane);
         return { saved: false, conflict: true };
       }
@@ -1439,22 +1441,48 @@
     }
   }
 
+  function ensure_discard_button(grid, pane, file) {
+    const meta = file.status_el && file.status_el.parentElement;
+    if (!meta || meta.querySelector('.tf-discard')) return;
+    const discard = create_el('button', 'tf-discard', 'Discard my edits');
+    discard.type = 'button';
+    discard.title = 'Replace the unsaved edits with the file on disk';
+    discard.addEventListener('click', () => {
+      file.conflict = false;
+      file.dirty = false;
+      file.loaded = false;
+      pane.active = pane.files.indexOf(file);
+      void load_file_content(grid, pane);
+    });
+    meta.append(discard);
+  }
+
   async function flush_dirty_editors(grid) {
+    const held = [];
     const pending = [];
     for (const view of grid.views.values()) {
       for (const pane of view.panes) {
         if (pane.disposed || pane.kind !== 'file' || !pane.files) continue;
         for (const file of pane.files) {
-          // A conflict the user already sees must not be written over the external file.
-          // A dirty buffer that has not failed yet is flushed, and a new conflict cancels close.
-          if (file.conflict || !file.dirty || file.editable === false) continue;
+          if (file.editable === false) continue;
+          if (file.conflict) {
+            held.push(file);
+            ensure_discard_button(grid, pane, file);
+            continue;
+          }
+          if (!file.dirty) continue;
           pending.push(flush_editor(grid, pane, file).then((result) => ({ file, result })));
         }
       }
     }
     const finished = await Promise.all(pending);
-    const blocked = finished.some(({ file, result }) => !result || !result.saved || file.dirty || file.conflict);
-    return { ok: !blocked };
+    for (const { file, result } of finished) {
+      if (!result || !result.saved || file.dirty || file.conflict) held.push(file);
+    }
+    if (held.length === 0) return { ok: true };
+    const names = [...new Set(held.map((file) => file.name))].join(', ');
+    show_banner(grid, `Close cancelled. Keep, save, or discard unsaved edits in: ${names}`);
+    return { ok: false, blocked: names };
   }
 
   // One file region per workspace. Further files become tabs in that region.

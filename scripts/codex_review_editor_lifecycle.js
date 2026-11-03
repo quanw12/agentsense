@@ -59,6 +59,12 @@ async function run(win) {
   const reopened = await js(`return document.querySelector('.tf-editor').value;`);
   record('R7', 'A close-time conflict retains the dirty tab and recoverable buffer', retained || reopened === 'UNSAVED CONFLICT BUFFER', {retained, reopened, disk:fs.readFileSync(path.join(fixture,'a.txt'),'utf8'), banner});
 
+  // R7 leaves a known conflict. A normal close must not run until that buffer is
+  // explicitly discarded. Discard reloads the external file and does not write it.
+  await js(`document.querySelector('.tf-discard').click();`);
+  await until(() => js(`return document.querySelector('.tf-editor')?.value === 'EXTERNAL CHANGE' && document.querySelector('.tf-save')?.textContent === 'saved';`), 'discard conflict');
+  record('R7_DISCARD', 'Discard is explicit and keeps the external file', fs.readFileSync(path.join(fixture,'a.txt'),'utf8') === 'EXTERNAL CHANGE', {disk:fs.readFileSync(path.join(fixture,'a.txt'),'utf8')});
+
   // Real native window close, no app.exit or renderer-reload shortcut. The app's
   // normal close/quit handlers must flush or cancel close while edits are dirty.
   await open('b.txt');
@@ -66,7 +72,8 @@ async function run(win) {
   closingDirtyWindow = true;
   win.once('closed', () => {
     const disk = fs.readFileSync(path.join(fixture,'b.txt'),'utf8');
-    record('R8', 'Native app close preserves edits pending the autosave debounce', disk === 'EDIT JUST BEFORE WINDOW CLOSE', {disk, expected:'EDIT JUST BEFORE WINDOW CLOSE'});
+    const kept = fs.readFileSync(path.join(fixture,'a.txt'),'utf8');
+    record('R8', 'Native app close preserves edits pending the autosave debounce', disk === 'EDIT JUST BEFORE WINDOW CLOSE' && kept === 'EXTERNAL CHANGE', {disk, expected:'EDIT JUST BEFORE WINDOW CLOSE', conflictedFile:kept});
   });
   win.close();
 }
