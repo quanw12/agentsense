@@ -16,7 +16,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "electron .",
-    "dev": "AGENT_HUB_DEVTOOLS=1 electron .",
+    "dev": "node scripts/dev.js",
+    "check": "node scripts/check_stability.js",
     "dist": "electron-builder --win --dir",
     "build:app": "node scripts/build_app.mjs",
     "icons": "node scripts/gen_icons.mjs",

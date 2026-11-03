@@ -1,0 +1,132 @@
+{
+  "single_click_in_normal_split_keeps_bounds": true,
+  "selecting_tab_while_zoomed": [
+    {
+      "id": "50b68413-724a-473b-ace6-441bd9e41608",
+      "hidden": true,
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+    },
+    {
+      "id": "2badc4ed-5a70-4892-9682-3fc007cb2843",
+      "hidden": false,
+      "x": 173,
+      "y": 79,
+      "w": 936.4000244140625,
+      "h": 713.2000122070312
+    }
+  ],
+  "layout_after_manual_resize": [
+    {
+      "id": "50b68413-724a-473b-ace6-441bd9e41608",
+      "hidden": false,
+      "x": 173,
+      "y": 79,
+      "w": 595.25,
+      "h": 713.2000122070312
+    },
+    {
+      "id": "2badc4ed-5a70-4892-9682-3fc007cb2843",
+      "hidden": false,
+      "x": 774.25,
+      "y": 79,
+      "w": 335.13751220703125,
+      "h": 713.2000122070312
+    }
+  ],
+  "saved_ui": {},
+  "layout_after_reload": [
+    {
+      "id": "50b68413-724a-473b-ace6-441bd9e41608",
+      "hidden": false,
+      "x": 173,
+      "y": 79,
+      "w": 465.20001220703125,
+      "h": 713.2000122070312
+    },
+    {
+      "id": "2badc4ed-5a70-4892-9682-3fc007cb2843",
+      "hidden": false,
+      "x": 644.2000122070312,
+      "y": 79,
+      "w": 465.20001220703125,
+      "h": 713.2000122070312
+    }
+  ],
+  "preview_after_disk_change_and_reopen": "original content",
+  "new_file_appears_without_refresh": false,
+  "opening_many_files": [
+    {
+      "id": "50b68413-724a-473b-ace6-441bd9e41608",
+      "hidden": false,
+      "x": 173,
+      "y": 79,
+      "w": 465.20001220703125,
+      "h": 353.6000061035156
+    },
+    {
+      "id": "2badc4ed-5a70-4892-9682-3fc007cb2843",
+      "hidden": false,
+      "x": 644.2000122070312,
+      "y": 79,
+      "w": 465.20001220703125,
+      "h": 713.2000122070312
+    },
+    {
+      "id": "pane-3",
+      "hidden": false,
+      "x": 173,
+      "y": 438.6000061035156,
+      "w": 465.20001220703125,
+      "h": 173.8000030517578
+    },
+    {
+      "id": "pane-4",
+      "hidden": false,
+      "x": 173,
+      "y": 618.4000244140625,
+      "w": 465.20001220703125,
+      "h": 83.9000015258789
+    },
+    {
+      "id": "pane-5",
+      "hidden": false,
+      "x": 173,
+      "y": 708.2999877929688,
+      "w": 465.20001220703125,
+      "h": 38.95000076293945
+    },
+    {
+      "id": "pane-6",
+      "hidden": false,
+      "x": 173,
+      "y": 753.25,
+      "w": 465.20001220703125,
+      "h": 16.475000381469727
+    },
+    {
+      "id": "pane-7",
+      "hidden": false,
+      "x": 173,
+      "y": 775.7250366210938,
+      "w": 465.20001220703125,
+      "h": 5.237500190734863
+    },
+    {
+      "id": "pane-8",
+      "hidden": false,
+      "x": 173,
+      "y": 786.9625244140625,
+      "w": 465.20001220703125,
+      "h": 5.237500190734863
+    }
+  ],
+  "tab_mode_visible_count": 1,
+  "tab_mode_divider_count": 0,
+  "reattach_info_has_worktree": false,
+  "worktree_exists_before_reload": true,
+  "restart_after_worktree_reattach_error": "cwd does not exist: C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-audit-5SG6NF.worktrees\\cynthia-terminal-worktree",
+  "worktree_exists_after_restart": false
+}
