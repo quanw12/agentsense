@@ -12,6 +12,7 @@ Người thực hiện: Grok 4.7. Người review: Codex. Không push, không me
 - Repo root: `C:\StudyBase\AgentSense`
 - OS / CPU: Windows 10.0.26300, x64. Node v24.11.1, npm 11.6.3, Electron 44.9.0
 - Branch local: `fix/workbench-stability`
+- Local commits: `03dda35`, `78f9e35`, `0260de4`, rồi commit ghi SHA này
 - HEAD lúc bắt đầu: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa` (`main`, khớp baseline audit)
 - BASE_SHA dùng để review: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa`
 - Git status trước khi làm: `main` sạch ngoài các file handoff chưa track (`grok-4.7-prompt.md`, `stabilization-*.md`, `codex-review-prompt.md`, `docs/handoffs/stabilization/`)
