@@ -23,6 +23,10 @@ const DEFAULT_ROWS = 24;
 const DIRECT_COMMANDS = ['powershell.exe', 'cmd.exe'];
 
 const sessions = new Map(); // terminal_id -> session
+const pending_creates = new Set();
+const closing_sessions = new Map();
+let shutdown_promise = null;
+let shutting_down = false;
 const terminal_events = new EventEmitter();
 const lifecycle = [];
 let desktop_present = () => false;
@@ -129,6 +133,7 @@ function to_info(session) {
     model_id: session.model_id,
     provider_id: session.provider_id,
     resume_mode: session.resume_mode,
+    claude_session_id: session.claude_session_id,
     cols: session.cols,
     rows: session.rows,
     size_owner: session.size_owner,
@@ -183,7 +188,15 @@ function log_error(message, error) {
 
 // Opts: workspace_id, agent_id, cwd, command, title, cols, rows, use_worktree, restore_record_id, resume_session_id.
 // Resolves with { terminal_id, cwd, worktree }. Rejects (and starts nothing) when the worktree cannot be made.
-async function create_terminal(opts) {
+function create_terminal(opts) {
+  if (shutting_down) return Promise.reject(new Error('AgentSense is shutting down; no new terminals can be started'));
+  const pending = create_terminal_inner(opts);
+  pending_creates.add(pending);
+  pending.then(() => pending_creates.delete(pending), () => pending_creates.delete(pending));
+  return pending;
+}
+
+async function create_terminal_inner(opts) {
   const options = opts || {};
   const base_command = (options.command || '').trim() || 'powershell.exe';
   const agent_id = normalize_agent_id(options.agent_id, base_command);
@@ -192,13 +205,15 @@ async function create_terminal(opts) {
   const requested_cwd = resolve_cwd(options.cwd);
   const cols = clamp_size(options.cols, DEFAULT_COLS);
   const rows = clamp_size(options.rows, DEFAULT_ROWS);
-  const resume_session_id = normalize_resume_id(options.resume_session_id);
   const context = launch_context(agent_id, options);
   note_life('create-start', agent_id);
   const restore_id = typeof options.restore_record_id === 'string' && options.restore_record_id !== ''
     ? options.restore_record_id
     : null;
   const restore_record = restore_id ? session_store.find_record(session_store.default_file_path(), restore_id) : null;
+  const saved_resume_id = agent_id === 'claude' && restore_record && restore_record.resume_mode !== 'unverified'
+    ? restore_record.claude_session_id : null;
+  const resume_session_id = normalize_resume_id(options.resume_session_id || saved_resume_id);
   // Only a plain `claude` command of a claude pane gets the hooks; other commands (a test shell, a custom
   // command) are started exactly as given.
   const wrap_claude = agent_id === 'claude' && base_command.toLowerCase() === 'claude';
@@ -284,7 +299,7 @@ async function create_terminal(opts) {
     cwd,
     base_cwd,
     pty: proc,
-    pid: proc.pid,
+    get pid() { return proc.pid; },
     alive: true,
     exit_code: null,
     buffer: '',
@@ -326,7 +341,6 @@ async function create_terminal(opts) {
     if (!sessions.has(terminal_id)) return;
     session.alive = false;
     session.exit_code = exitCode;
-    console.log(`pty socket exit id=${terminal_id} code=${exitCode}`);
     note_life('exit', terminal_id);
     // Keep the saved record, including worktree identity, so Restart can resolve it.
     // An explicit close is what removes the record.
@@ -334,6 +348,14 @@ async function create_terminal(opts) {
     terminal_events.emit('exit', terminal_id, exitCode);
   });
 
+  // node-pty 1.2 connects asynchronously. Do not report a ready terminal with
+  // pid 0, and keep shutdown waiting for this already accepted launch.
+  try {
+    if (proc.__agentsense_ready) await proc.__agentsense_ready;
+  } catch (error) {
+    await close_terminal(terminal_id, {keep_record: !!restore_id, keep_worktree: !created_worktree});
+    throw error;
+  }
   note_life('create-ready', terminal_id);
   return {
     terminal_id,
@@ -381,11 +403,8 @@ function resize_terminal(terminal_id, cols, rows, source) {
   return { applied: true, owner: origin, cols: next_cols, rows: next_rows };
 }
 
-// Closes a pane: kills the process, forgets the session, removes its hooks file and (unless keep_record) its saved
-// record. Then the worktree is removed when it is clean. Resolves with
-// { worktree_removed, worktree_path, worktree_kept_reason }. The kill itself happens synchronously, so
-// kill_all does not have to wait for the worktree step.
-// The UI removes the pane itself, so no exit event is emitted for an explicit close.
+// Closing waits for native cleanup and worktree handling. Concurrent callers share
+// the same result; removing a session from the live map does not finish its close.
 const releases = new Set();
 
 function track_release(promise) {
@@ -412,11 +431,21 @@ function pid_exists(pid) {
 function watch_native_exit(proc) {
   const agent = proc && proc._agent;
   if (!agent || agent.__agentsense_exit_promise || typeof agent._$onProcessExit !== 'function') return;
+  proc.__agentsense_ready = proc.pid > 0 ? Promise.resolve() : new Promise((resolve, reject) => {
+    proc._socket.once('ready_datapipe', resolve);
+    if (agent.onError) agent.onError(reject);
+  });
+  // Connection errors can arrive before create_terminal starts awaiting readiness.
+  proc.__agentsense_ready.catch(() => {});
   agent.__agentsense_exit_promise = new Promise((resolve) => {
+    if (agent.onError) agent.onError(() => {
+      agent.__agentsense_native_exit = true;
+      resolve();
+    });
     const original = agent._$onProcessExit.bind(agent);
     agent._$onProcessExit = function (exitCode) {
       agent.__agentsense_native_exit = true;
-      console.log(`pty native exit pid=${proc.pid} code=${exitCode}`);
+      note_life('native-exit', `${proc.pid}:${exitCode}`);
       const connection = agent._conoutSocketWorker;
       const worker = connection && connection._worker;
       // The DLL exit path never stops the conout worker. After the client
@@ -463,27 +492,23 @@ function drain_worker(connection, worker) {
 }
 
 function release_pty(proc) {
-  if (!proc || proc.__agentsense_released) return Promise.resolve();
-  proc.__agentsense_released = true;
+  if (!proc) return Promise.resolve();
+  if (proc.__agentsense_release_promise) return proc.__agentsense_release_promise;
   const agent = proc._agent;
   const connection = agent && agent._conoutSocketWorker;
   const worker = connection && connection._worker;
   const native_exit = (agent && agent.__agentsense_exit_promise) || Promise.resolve();
-  if (agent && !agent.__agentsense_native_exit && pid_exists(proc.pid)) {
-    try {
-      process.kill(proc.pid);
-    } catch (error) {
-      log_error('pty process kill failed', error);
-    }
-  }
-  console.log(`pty release start pid=${proc.pid} native=${!!(agent && agent.__agentsense_native_exit)}`);
   note_life('release', `${proc.pid}:${agent && agent.__agentsense_native_exit ? 'exited' : 'signaled'}`);
-  return native_exit.then(() => {
-    console.log(`pty release watcher done pid=${proc.pid}`);
+  const released = Promise.resolve(proc.__agentsense_ready).catch(() => {}).then(() => {
+    if (agent && !agent.__agentsense_native_exit && pid_exists(proc.pid)) {
+      try { process.kill(proc.pid); }
+      catch (error) { if (error.code !== 'ESRCH') throw error; }
+    }
+    return native_exit;
+  }).then(() => {
     if (agent && agent.__agentsense_worker_done) return agent.__agentsense_worker_done;
     return drain_worker(connection, worker);
   }).then(() => {
-    console.log(`pty release worker done pid=${proc.pid}`);
     try {
       if (agent && agent._inSocket) agent._inSocket.destroy();
       if (agent && agent._outSocket) {
@@ -497,20 +522,21 @@ function release_pty(proc) {
     log_error('conout worker terminate failed', error);
     return null;
   });
+  proc.__agentsense_release_promise = released;
+  return released;
 }
 
 function close_terminal(terminal_id, options) {
   const opts = options || {};
+  if (closing_sessions.has(terminal_id)) return closing_sessions.get(terminal_id);
   const session = sessions.get(terminal_id);
   if (!session) return Promise.resolve(empty_kill_result());
-  if (session.closing) return session.closing;
   note_life('close-start', terminal_id);
   sessions.delete(terminal_id);
   const proc = session.pty;
   session.pty = null;
   session.alive = false;
-  const released = track_release(release_pty(proc));
-  session.closing = released;
+  const released = release_pty(proc);
   get_hook_server().unregister_terminal(terminal_id);
   if (session.hooks_file) claude_hooks.delete_hooks_file(hooks_dir(), terminal_id);
   if (!opts.keep_record) {
@@ -520,15 +546,15 @@ function close_terminal(terminal_id, options) {
       log_error('could not remove the session record', error);
     }
   }
-  if (!session.worktree) return released.then(() => empty_kill_result());
-  if (opts.keep_worktree) {
-    return released.then(() => ({
+  let outcome;
+  if (!session.worktree) outcome = released.then(() => empty_kill_result());
+  else if (opts.keep_worktree) {
+    outcome = released.then(() => ({
       worktree_removed: false,
       worktree_path: session.worktree.path,
       worktree_kept_reason: 'kept: the app is quitting',
     }));
-  }
-  return released.then(() => worktree.remove_if_clean(session.worktree)).then(
+  } else outcome = released.then(() => worktree.remove_if_clean(session.worktree)).then(
     (outcome) => ({
       worktree_removed: outcome.removed,
       worktree_path: session.worktree.path,
@@ -540,6 +566,10 @@ function close_terminal(terminal_id, options) {
       worktree_kept_reason: error.message,
     })
   );
+  const pending = track_release(outcome);
+  closing_sessions.set(terminal_id, pending);
+  pending.then(() => closing_sessions.delete(terminal_id), () => closing_sessions.delete(terminal_id));
+  return pending;
 }
 
 function kill_terminal(terminal_id) {
@@ -581,6 +611,16 @@ function kill_all() {
   return Promise.all(pending);
 }
 
+// Unlike kill_all (also used by tests), shutdown permanently closes admission.
+// Wait for accepted launches before taking the final snapshot of sessions.
+function shutdown() {
+  shutting_down = true;
+  if (!shutdown_promise) {
+    shutdown_promise = Promise.allSettled(Array.from(pending_creates)).then(() => kill_all());
+  }
+  return shutdown_promise;
+}
+
 // Record ids of panes whose process is running now. Saved records with these ids are not "saved" any more.
 function live_record_ids() {
   const ids = new Set();
@@ -618,6 +658,7 @@ module.exports = {
   list_terminals,
   kill_workspace_terminals,
   kill_all,
+  shutdown,
   live_record_ids,
   get_record_id,
   note_claude_session,

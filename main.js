@@ -212,10 +212,10 @@ if (!got_lock) {
     event.preventDefault();
     if (quit_state === 'draining') return;
     quit_state = 'draining';
-    Promise.resolve(pty_manager.kill_all()).catch((error) => {
+    const terminals_done = pty_manager.shutdown();
+    Promise.all([terminals_done, get_mobile_server().stop(), get_hook_server().stop()]).catch((error) => {
       console.error(`terminal shutdown failed: ${error && error.message ? error.message : error}`);
     }).finally(() => {
-      try { get_mobile_server().stop(); } catch (error) { console.error(error); }
       quit_state = 'done';
       app.quit();
     });

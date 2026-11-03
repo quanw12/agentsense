@@ -1300,6 +1300,12 @@
         file.dirty = false;
         file.conflict = false;
         file.editable = result.editable !== false && !result.truncated;
+        const has_crlf = file.disk.includes('\r\n');
+        const other_lines = file.disk.replace(/\r\n/g, '');
+        const mixed_lines = other_lines.includes('\r') || (has_crlf && other_lines.includes('\n'));
+        file.line_ending = has_crlf ? '\r\n' : '\n';
+        file.readonly_reason = result.readonly_reason || (mixed_lines ? 'Mixed or legacy line endings: open externally to edit without changing the file format.' : null);
+        if (mixed_lines) file.editable = false;
         file.loaded_bytes = Number.isFinite(result.loaded_bytes) ? result.loaded_bytes : result.size;
       }
       pane.body.textContent = '';
@@ -1357,6 +1363,7 @@
       meta = create_el('div', 'tf-meta');
       meta.textContent = file.editable === false ? 'read-only preview' : '';
     }
+    if (file.readonly_reason) meta.textContent = file.readonly_reason;
     const text = create_el('textarea', 'tf-text tf-editor');
     text.value = file.buffer != null ? file.buffer : '';
     text.spellcheck = false;
@@ -1368,8 +1375,8 @@
     if (file.editable !== false) {
       text.addEventListener('input', () => {
         file.edit_generation = (file.edit_generation || 0) + 1;
-        file.buffer = text.value;
-        file.dirty = text.value !== file.disk;
+        file.buffer = file.line_ending === '\r\n' ? text.value.replace(/\r?\n/g, '\r\n') : text.value;
+        file.dirty = file.buffer !== file.disk;
         status.textContent = file.dirty ? 'edited' : 'saved';
         render_file_tabs(grid, pane);
         schedule_save(grid, pane, file);

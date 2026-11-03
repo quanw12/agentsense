@@ -133,14 +133,17 @@ function read_file(root_path, rel) {
   }
   if (stat.size <= EDIT_MAX_BYTES) {
     const buf = fs.readFileSync(resolved.path);
+    const content = buf.toString('utf8');
+    const utf8 = Buffer.from(content, 'utf8').equals(buf);
     return {
       ...base,
       kind: 'text',
       truncated: false,
-      editable: true,
+      editable: utf8,
+      readonly_reason: utf8 ? null : 'This encoding is not supported for editing. Open the file externally.',
       binary: false,
       loaded_bytes: buf.length,
-      content: buf.toString('utf8'),
+      content,
     };
   }
   const handle = fs.openSync(resolved.path, 'r');

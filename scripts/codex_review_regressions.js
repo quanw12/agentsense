@@ -47,20 +47,20 @@ async function run(win) {
   await open('large.txt');
   const shown = await js('return document.querySelector(".tf-editor").value.length;');
   await edit('a'.repeat(shown) + 'EDIT');
-  await delay(1000);
+  await until(() => fs.readFileSync(path.join(fixture, 'large.txt'), 'utf8').endsWith('EDIT'), 'large file autosave completes');
   const savedBytes = fs.statSync(path.join(fixture, 'large.txt')).size;
-  record('R1', 'Editing a 600 KiB text file preserves its unseen tail', savedBytes >= 600 * 1024, { before: 600 * 1024, shown, after: savedBytes });
+  record('R1', 'Editing a 600 KiB text file preserves its unseen tail', shown === 600 * 1024 && fs.readFileSync(path.join(fixture, 'large.txt'), 'utf8') === 'a'.repeat(600 * 1024) + 'EDIT', { before: 600 * 1024, shown, after: savedBytes });
 
   await open('a.txt');
   await edit('MY UNSAVED EDIT');
   fs.writeFileSync(path.join(fixture, 'a.txt'), 'EXTERNAL DISK UPDATE');
-  await delay(1000);
+  await until(() => js('return document.querySelector(".tf-save")?.textContent === "conflict";'), 'external change reports a conflict');
   const conflict = await js('return document.querySelector(".tf-save")?.textContent;');
   await open('b.txt');
   await js(`Array.from(document.querySelectorAll('.tf-file-tab')).find(b => b.textContent.startsWith('a.txt')).click();`);
   await delay(300);
   const returned = await js('return document.querySelector(".tf-editor").value;');
-  record('R2', 'A conflicted buffer survives switching tabs', returned === 'MY UNSAVED EDIT', { statusBeforeSwitch: conflict, editorAfterReturn: returned });
+  record('R2', 'A conflicted buffer survives switching tabs', conflict === 'conflict' && returned === 'MY UNSAVED EDIT', { statusBeforeSwitch: conflict, editorAfterReturn: returned });
 
   const providers = require('../src/main/providers_store');
   const providerFile = path.join(root, 'providers-legacy.json');
@@ -110,7 +110,7 @@ app.on('browser-window-created', (_event, win) => {
       const pty = require('../src/main/pty_manager');
       for (const t of pty.list_terminals()) if(t.alive) pty.write_terminal(t.terminal_id,'exit\r');
       await delay(1500);
-      pty.kill_all();
+      await pty.kill_all();
       const reviewedHead = execFileSync('git', ['rev-parse','HEAD'], {cwd:path.join(__dirname,'..'), encoding:'utf8', windowsHide:true}).trim();
       const evidence = { reviewedHead, createdAt:new Date().toISOString(), fixtureRoot:root, results };
       const evidenceDir = path.join(__dirname,'../docs/handoffs/stabilization/evidence');

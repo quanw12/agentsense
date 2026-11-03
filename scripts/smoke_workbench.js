@@ -33,7 +33,11 @@ async function until(predicate, label, timeout = 20000) {
 }
 
 async function run(window) {
+  // A launcher may set SW_HIDE. xterm needs an actual rendered surface to
+  // measure cell dimensions; default 80 columns are not proof of a first fit.
+  window.show();
   const contents = window.webContents;
+  contents.setBackgroundThrottling(false);
   const js = (source) => contents.executeJavaScript(source.includes('await ') ? `(async () => { ${source} })()` : source).catch((error) => {
     console.error(`Renderer check failed: ${source}`);
     throw error;
@@ -87,10 +91,12 @@ async function run(window) {
   check('focus does not move pane bounds by more than 1px', after.every((pane, index) => Math.abs(pane.w - before[index].w) <= 1 && Math.abs(pane.h - before[index].h) <= 1));
   await js(`document.querySelector('.tg-root').dispatchEvent(new KeyboardEvent('keydown', {key:'Tab', ctrlKey:true, bubbles:true}));`);
   check('Ctrl+Tab selects another agent without hiding panes', await js('document.querySelectorAll(".tg-view-active .tg-pane:not([hidden])").length === 3'));
+  await until(() => js('Number(document.querySelector(".tg-view-active .tg-pane[data-terminal-id]").dataset.cols) > 0'), 'initial terminal fit');
   const before_cols = await js('Number(document.querySelector(".tg-view-active .tg-pane[data-terminal-id]").dataset.cols)');
   await js('document.querySelector("[data-action=toggle_files]").click()');
-  await delay(250);
-  check('hiding explorer refits terminals and exposes toggle state', await js(`document.querySelector('[data-action=toggle_files]').getAttribute('aria-pressed') === 'false' && Number(document.querySelector('.tg-view-active .tg-pane[data-terminal-id]').dataset.cols) > ${before_cols}`));
+  const explorer_refit = `document.querySelector('[data-action=toggle_files]').getAttribute('aria-pressed') === 'false' && Number(document.querySelector('.tg-view-active .tg-pane[data-terminal-id]').dataset.cols) > ${before_cols}`;
+  await until(() => js(explorer_refit), 'terminal refit after hiding explorer');
+  check('hiding explorer refits terminals and exposes toggle state', await js(explorer_refit));
   await js(`document.querySelector('.tg-root').dispatchEvent(new KeyboardEvent('keydown', {key:'E', ctrlKey:true, shiftKey:true, bubbles:true}));
     document.querySelector('.tg-view-active .tg-files-resize').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft', bubbles:true}));`);
   check('explorer shortcut and keyboard resizing persist', await js(`(() => {
@@ -114,7 +120,10 @@ async function run(window) {
   })()`;
   await js(drag);
   await until(() => writes.some((w) => w.id === terminal_ids[1] && w.data.includes('brief.txt')), 'file path reaches second agent');
-  check('tree drag targets only the receiving agent and never submits', writes.every((w) => w.id === terminal_ids[1] && !/[\r\n]/.test(w.data)));
+  // CPR/focus reports are xterm replies to shell queries, not drop input. The
+  // receiving path and every non-protocol write must still target this agent.
+  const drop_inputs = writes.filter(w => !/^\x1b\[(?:\d+;\d+R|[IO])$/.test(w.data));
+  check('tree drag targets only the receiving agent and never submits', drop_inputs.some(w => w.data.includes('brief.txt')) && drop_inputs.every((w) => w.id === terminal_ids[1] && !/[\r\n]/.test(w.data)));
   writes.length = 0;
   await js(`(() => {
     const dt = new DataTransfer();
@@ -187,7 +196,9 @@ async function run(window) {
   check('custom CLI launches with the standard session lifecycle', pty.list_terminals().some((t) => t.workspace_id !== info.workspace_id && t.command === 'powershell.exe'));
   check('no renderer errors', errors.length === 0);
   if (errors.length) console.log(errors.join('\n'));
-  // Exit the test shells before closing their ConPTY handles, so node-pty's process-list helper can detach.
+  // Close through the product API. Drag/drop deliberately left unsubmitted input
+  // in these shells; injecting Ctrl+C/exit is not a reliable cleanup protocol.
+  // Concurrent natural shell exit is tested separately in check_pty_lifecycle.
   const shells_before_exit = pty.list_terminals().map((t) => ({
     terminal_id: t.terminal_id,
     pid: t.pid,
@@ -197,27 +208,9 @@ async function run(window) {
     cwd: t.cwd,
   }));
   console.log(`shells before exit: ${JSON.stringify(shells_before_exit)}`);
-  console.log('shutdown step: interrupt');
-  await js(`for (const s of await window.hub.terminals.list()) window.hub.terminals.write(s.terminal_id, '\\x03');`);
-  await delay(100);
-  console.log('shutdown step: exit-command');
-  await js(`for (const s of await window.hub.terminals.list()) window.hub.terminals.write(s.terminal_id, 'exit\\r');`);
-  try {
-    await until(() => pty.list_terminals().every((t) => !t.alive), 'test shells exit');
-  } catch (error) {
-    const stuck = pty.list_terminals().map((t) => ({
-      terminal_id: t.terminal_id,
-      alive: t.alive,
-      exit_code: t.exit_code,
-      pid: t.pid,
-      command: t.command,
-      cwd: t.cwd,
-    }));
-    console.error(`test shells still alive: ${JSON.stringify(stuck)}`);
-    throw error;
-  }
-  console.log('shutdown step: shells-dead');
+  console.log('shutdown step: close through product API');
   await js('for (const s of await window.hub.terminals.list()) await window.hub.terminals.kill(s.terminal_id)');
+  check('all test terminals close through the product API', pty.list_terminals().length === 0);
   console.log('shutdown step: killed');
   // The worktree contains dropped files, so normal close must preserve it.
   check('closing an agent preserves its modified worktree', fs.existsSync(staged_external));
