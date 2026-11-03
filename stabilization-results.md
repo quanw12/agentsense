@@ -7,12 +7,12 @@ Người thực hiện: Grok 4.7. Người review: Codex. Không push, không me
 - HANDOFF_STATE: READY_FOR_CODEX_REVIEW
 - IMPLEMENTATION_STATUS: PARTIAL
 - PUBLIC_RELEASE_READINESS: NOT_READY
-- CODEX_REVIEW_STATE: AWAITING_REREVIEW
+- CODEX_REVIEW_STATE: CHANGES_REQUESTED
 - Ngày: 2026-11-03
 - Repo root: `C:\StudyBase\AgentSense`
 - OS / CPU: Windows 10.0.26300, x64. Node v24.11.1, npm 11.6.3, Electron 44.9.0
 - Branch local: `fix/workbench-stability`
-- Local commits: `03dda35`, `78f9e35`, `0260de4`, `4edad8c`, `53a24d5`, rồi commit ghi SHA này
+- Local commits: `03dda35`, `78f9e35`, `0260de4`, `4edad8c`, `53a24d5`, `c0c5e37`, `e6e3d86`, rồi commit ghi SHA này
 - HEAD lúc bắt đầu: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa` (`main`, khớp baseline audit)
 - BASE_SHA dùng để review: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa`
 - Git status trước khi làm: `main` sạch ngoài các file handoff chưa track (`grok-4.7-prompt.md`, `stabilization-*.md`, `codex-review-prompt.md`, `docs/handoffs/stabilization/`)
@@ -36,7 +36,7 @@ Trạng thái dưới đây không phải PASS của public release. `FIXED_VERI
 | T10 | File tree theo worktree | IMPLEMENTED_NOT_VERIFIED | R5: mousedown trong terminal worktree đổi `.fp-title` sang đúng worktree | Chưa hai worktree với `src/foo.js` khác nhau; chưa Ctrl+Tab/sidebar/quick-open/Open/Reveal |
 | T11 | Drop đúng relative path | IMPLEMENTED_NOT_VERIFIED | Smoke: worktree không tạo `brief (1).txt`; file ngoài vào `.agentsense-import` | Chưa đủ dấu/khoảng trắng/target đóng giữa chừng |
 | T12 | Ma trận CLI | IMPLEMENTED_NOT_VERIFIED | Contract: 14 id khớp `cli_capabilities.js`. Codex không nhận env model đoán | Chưa launch/chat CLI thật |
-| T13 | Editor không giữ nội dung cũ | IMPLEMENTED_NOT_VERIFIED | R1: file 614400 byte được nạp đủ, save còn 614404. R2: conflict rồi đổi tab vẫn còn `MY UNSAVED EDIT`. Node check giữ đuôi, UTF-8, BOM/CRLF và từ chối preview cắt | Chưa đóng tab trước debounce và gõ trong lúc write trên UI |
+| T13 | Editor không giữ nội dung cũ | IMPLEMENTED_NOT_VERIFIED | R1/R2 vẫn PASS. R7: đóng tab trước debounce khi có conflict giữ tab và `UNSAVED CONFLICT BUFFER`. R8: đóng cửa sổ native ghi `EDIT JUST BEFORE WINDOW CLOSE` | Tab đã conflict từ trước không chặn quit. Chưa relaunch app để đọc lại file |
 | T14 | Watch cây file | IMPLEMENTED_NOT_VERIFIED | `files:watch` debounce, bỏ `node_modules`/`.git` | Chưa đo burst |
 | T15 | Giữ expansion | IMPLEMENTED_NOT_VERIFIED | `refresh_preserve` giữ scroll/selection trong code | Chưa test 3 tầng |
 | T16 | Import không cắt âm thầm | IMPLEMENTED_NOT_VERIFIED | check: 101 mục đều ok; 250 mục reject cả batch, không copy | Chưa đối chiếu số trên UI |
@@ -46,7 +46,7 @@ Trạng thái dưới đây không phải PASS của public release. `FIXED_VERI
 | T20 | Một chủ PTY size | IMPLEMENTED_NOT_VERIFIED | Mobile resize không áp khi có cửa sổ desktop | Chưa 2 WebSocket và chưa máy thật |
 | T21 | Rate limit theo nguồn | IMPLEMENTED_NOT_VERIFIED | check: A lock, B không. Smoke mobile: cùng nguồn vẫn lock sau 3 token sai | Chưa rotate token + expiry trên HTTP |
 | T22 | Mobile LAN/VPN | IMPLEMENTED_NOT_VERIFIED | UI/state nói loopback và LAN, không nhận là internet/TLS. APPROACH: không làm cloud | LAN/VPN thật NOT_RUN |
-| T23 | ConPTY lifecycle | IMPLEMENTED_NOT_VERIFIED | 20 cycle create/close exit 0. Smoke workbench lần 2 exit 0 | Lần smoke đầu exit `0xC0000005` lúc teardown. Soak 30 phút NOT_RUN |
+| T23 | ConPTY lifecycle | IMPLEMENTED_NOT_VERIFIED | 20 cycle exit 0. Spawn Windows dùng `useConptyDll` nên kill không fork helper AttachConsole. Mobile smoke sau sửa không còn stack đó | Lần smoke đầu exit `0xC0000005` vẫn là lịch sử. Soak 30 phút NOT_RUN |
 | T24 | Một nguồn build | IMPLEMENTED_NOT_VERIFIED | `scripts/build_app.mjs` stage rồi swap, ghi `BUILD.json` | Chưa chạy `npm run dist` |
 | T25 | Cài đặt có rollback | IMPLEMENTED_NOT_VERIFIED | `install.ps1` stage/swap, từ chối `%APPDATA%` | Chưa cài/nâng cấp/gỡ trong thư mục tạm |
 | T26 | Phát hành | xem mục con | local only | Không FIXED_VERIFIED |
@@ -68,7 +68,7 @@ Trạng thái dưới đây không phải PASS của public release. `FIXED_VERI
 
 | Mục con | Trạng thái | Kết quả | Bằng chứng | Còn thiếu |
 | --- | --- | --- | --- | --- |
-| T28a | IMPLEMENTED_NOT_VERIFIED | R1/R2 pass trên UI fixture. Conflict kiểm mtime trước khi chặn preview cắt | `scripts/codex_review_regressions.js` exit 0 | Chưa đủ close-tab và write đang chạy trên UI |
+| T28a | IMPLEMENTED_NOT_VERIFIED | R7/R8 PASS trên `scripts/codex_review_editor_lifecycle.js` | evidence `codex-review-editor-e6e3d86-1793706192197.json` | Quit không bị chặn bởi tab conflict đã hiện từ trước |
 | T28b | IMPLEMENTED_NOT_VERIFIED | Quick-open đọc root hiện tại lúc gõ, không đóng root lần tạo overlay | `open_quick_open` | Chưa bấm Ctrl+P sau khi đổi worktree |
 | T28c | IMPLEMENTED_NOT_VERIFIED | Smoke workbench/mobile và lifecycle vẫn pass. Fixture R1–R6 exit 0 sau sửa | evidence timestamp bên dưới. Evidence FAIL gốc không sửa | Chưa phủ hết T01–T27 |
 | T28d | NOT_RUN | | | Windows sạch, path tiếng Việt, upgrade hai artifact |
@@ -125,8 +125,9 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 ## 8. Dành cho Codex
 
 - CODEX_REVIEW_STATE: CHANGES_REQUESTED
-- HEAD đã review: `4edad8c880b1f0d23f0f15b2bb77fd0c42172b37`, ngày 03/11/2026.
-- Quyết định: chưa đạt điều kiện push/tạo PR. Người dùng đã cho phép Codex push/tạo PR nếu review đạt; hiện còn sáu regression đã tái hiện độc lập, gồm ba lỗi P1 mất dữ liệu.
+- HEAD review mới nhất: `c0c5e371face5474490a1cf47f6114f98e6b45e3`, ngày 03/11/2026. Review vòng 1 ở `4edad8c` giữ trong báo cáo lịch sử.
+- Quyết định vòng 2: R1–R6 đã PASS độc lập, nhưng chưa đạt điều kiện push/tạo PR vì R7/R8 mất nội dung chưa lưu và native teardown C1. Người dùng đã cho phép Codex push/tạo PR nếu review đạt.
+- Báo cáo hiện tại và việc sửa tiếp: [codex-review-round2.md](docs/handoffs/stabilization/codex-review-round2.md).
 - Báo cáo reviewer, ma trận T01–T28/subtask và prompt sửa tiếp cho Grok: [codex-review.md](docs/handoffs/stabilization/codex-review.md).
 - `npm run check`, workbench/mobile smoke, 20 lifecycle cycles và JS syntax đều pass. Fixture `scripts/codex_review_regressions.js` exit 1: R1–R6 FAIL; evidence ở `docs/handoffs/stabilization/evidence/codex-review-regressions.json`.
 - Không sửa implementation, không commit/push/PR/merge/release trong lượt review. Chỉ bổ sung hồ sơ review và fixture kiểm chứng. Không có kênh gửi trực tiếp Grok; prompt bàn giao nằm trong báo cáo trên.
@@ -144,4 +145,22 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 - Lượt pass sau sửa: `docs/handoffs/stabilization/evidence/codex-review-regressions-4edad8c-1793704241034.json`. R1–R6 PASS, exit 0. R2 `statusBeforeSwitch` là `conflict`.
 - Lượt giữa, trước khi đưa kiểm tra mtime lên trước: `codex-review-regressions-4edad8c-1793704056937.json`. R1–R6 vẫn PASS nhưng R2 báo `error` vì file đĩa dài hơn bản đã nạp. Không dùng file đó làm kết quả cuối.
 - Vẫn NOT_RUN: đóng/mở app thật 2/4/6 pane, reload sau restart, worktree bẩn, `src/foo.js` trên hai worktree, soak, dist/cài/gỡ, CLI/provider/phone/LAN/VPN, safeStorage thật, máy sạch, chữ ký.
+- Public release: NOT_READY. Chưa push, chưa merge, chưa phát hành.
+
+## 10. Codex review vòng 2
+
+- HEAD `c0c5e37`: 27 Node checks, R1–R6, smoke workbench và 20 lifecycle cycles PASS. Evidence R1–R6 mới ở `docs/handoffs/stabilization/evidence/codex-review-regressions-c0c5e37-1793705137624.json`.
+- Fixture mới `scripts/codex_review_editor_lifecycle.js`: control close/save PASS, R7 conflict khi close FAIL và R8 native app close trước autosave FAIL; exit 1. Evidence `docs/handoffs/stabilization/evidence/codex-review-editor-c0c5e37-1793705277414.json`.
+- Mobile smoke có assertion PASS/exit 0 nhưng `AttachConsole failed` từ native helper, lặp lại cả khi chạy riêng. Log `docs/handoffs/stabilization/evidence/codex-review-mobile-c0c5e37.log`. Chưa xác định lỗi sản phẩm hay test/helper; cần điều tra, không coi teardown sạch.
+- CHANGES_REQUESTED, không push/tạo PR/merge/release. Không sửa implementation hoặc tạo commit trong review này. Giao việc qua `codex-review-round2.md`.
+
+## 11. Sửa sau review vòng 2
+
+- Implementation: `e6e3d86ee10d3bd85ed81d5d3fb018a2b59c1cac`. Evidence dưới đây được ghi khi HEAD là commit đó. Commit hồ sơ sau nó không đổi runtime.
+- R7: đóng tab await save. Conflict hoặc lỗi ghi giữ tab và buffer. Control đóng tab bẩn không có sửa ngoài vẫn ghi `SAVED ON CLOSE`.
+- R8: `BrowserWindow` `close` bị giữ lại đến khi renderer flush xong. File vừa gõ được ghi trước sự kiện `closed`. Conflict phát sinh trong lần flush đó hủy close. Tab đã ở trạng thái conflict từ trước không bị ghi đè và không chặn quit.
+- C1: nguyên nhân là `pty.kill()` trên ConPTY không-DLL. node-pty fork `conpty_console_list_agent.js`, helper gọi `AttachConsole` sau khi console đã bị hủy, rồi process smoke đã exit 0. Sửa ở sản phẩm: spawn Windows đặt `useConptyDll: true`, nên đường kill không tạo helper đó. Smoke mobile theo dõi helper nếu nó vẫn được fork và coi exit khác 0 là FAIL; stderr không bị nuốt. Log sạch: `docs/handoffs/stabilization/evidence/codex-review-mobile-e6e3d86.log` có `ALL CHECKS PASSED` và không có `AttachConsole`.
+- R1–R6 chạy lại trên commit này: `docs/handoffs/stabilization/evidence/codex-review-regressions-e6e3d86-1793706200146.json`, exit 0.
+- R7/R8: `docs/handoffs/stabilization/evidence/codex-review-editor-e6e3d86-1793706192197.json`, exit 0. Evidence FAIL gốc của vòng 2 giữ nguyên.
+- Vẫn NOT_RUN: soak, dist/cài/gỡ, CLI/provider/phone/LAN/VPN, safeStorage thật, máy sạch, chữ ký, đóng/mở app 2/4/6 pane.
 - Public release: NOT_READY. Chưa push, chưa merge, chưa phát hành.

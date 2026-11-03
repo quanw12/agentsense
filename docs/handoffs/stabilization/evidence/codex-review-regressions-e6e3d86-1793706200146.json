@@ -1,0 +1,77 @@
+{
+  "reviewedHead": "e6e3d86ee10d3bd85ed81d5d3fb018a2b59c1cac",
+  "createdAt": "2026-11-03T11:43:20.145Z",
+  "fixtureRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-OkkYMd",
+  "results": [
+    {
+      "id": "R1",
+      "expectation": "Editing a 600 KiB text file preserves its unseen tail",
+      "passed": true,
+      "actual": {
+        "before": 614400,
+        "shown": 614400,
+        "after": 614404
+      }
+    },
+    {
+      "id": "R2",
+      "expectation": "A conflicted buffer survives switching tabs",
+      "passed": true,
+      "actual": {
+        "statusBeforeSwitch": "conflict",
+        "editorAfterReturn": "MY UNSAVED EDIT"
+      }
+    },
+    {
+      "id": "R3",
+      "expectation": "Metadata edits cannot erase a legacy key when secure storage is unavailable",
+      "passed": true,
+      "actual": {
+        "rejected": true,
+        "keyRetained": true
+      }
+    },
+    {
+      "id": "R4",
+      "expectation": "Cold restore preserves a saved 70/30 split",
+      "passed": true,
+      "actual": {
+        "savedRatio": 0.7,
+        "restoredRatio": 0.7025836016258373,
+        "widths": [
+          653.6749877929688,
+          276.7124938964844
+        ]
+      }
+    },
+    {
+      "id": "R5",
+      "expectation": "Clicking inside a worktree terminal updates the explorer root",
+      "passed": true,
+      "actual": {
+        "expectedRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-OkkYMd\\workspace.worktrees\\matthew-terminal-terminal",
+        "actualRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-OkkYMd\\workspace.worktrees\\matthew-terminal-terminal"
+      }
+    },
+    {
+      "id": "R6",
+      "expectation": "Restart retains worktree metadata in main and on disk",
+      "passed": true,
+      "actual": {
+        "cwdRetained": true,
+        "mainWorktree": {
+          "path": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-OkkYMd\\workspace.worktrees\\matthew-terminal-terminal",
+          "branch": "agentsense/matthew-terminal-terminal-mw0mcvuc",
+          "repo_path": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-OkkYMd\\workspace",
+          "base_commit": "5d0378497fdddb0f9ff219a08c652f128ffa52ab"
+        },
+        "diskWorktree": {
+          "path": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-OkkYMd\\workspace.worktrees\\matthew-terminal-terminal",
+          "branch": "agentsense/matthew-terminal-terminal-mw0mcvuc",
+          "repo_path": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-OkkYMd\\workspace",
+          "base_commit": "5d0378497fdddb0f9ff219a08c652f128ffa52ab"
+        }
+      }
+    }
+  ]
+}
