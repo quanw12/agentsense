@@ -12,7 +12,7 @@ Người thực hiện: Grok 4.7. Người review: Codex. Không push, không me
 - Repo root: `C:\StudyBase\AgentSense`
 - OS / CPU: Windows 10.0.26300, x64. Node v24.11.1, npm 11.6.3, Electron 44.9.0
 - Branch local: `fix/workbench-stability`
-- Local commits: `03dda35`, `78f9e35`, `0260de4`, `4edad8c`, `53a24d5`, `c0c5e37`, `e6e3d86`, rồi commit ghi SHA này
+- Local commits: `03dda35`, `78f9e35`, `0260de4`, `4edad8c`, `53a24d5`, `c0c5e37`, `e6e3d86`, `28102e3`, `b03fed0`, rồi commit ghi SHA này
 - HEAD lúc bắt đầu: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa` (`main`, khớp baseline audit)
 - BASE_SHA dùng để review: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa`
 - Git status trước khi làm: `main` sạch ngoài các file handoff chưa track (`grok-4.7-prompt.md`, `stabilization-*.md`, `codex-review-prompt.md`, `docs/handoffs/stabilization/`)
@@ -36,7 +36,7 @@ Trạng thái dưới đây không phải PASS của public release. `FIXED_VERI
 | T10 | File tree theo worktree | IMPLEMENTED_NOT_VERIFIED | R5: mousedown trong terminal worktree đổi `.fp-title` sang đúng worktree | Chưa hai worktree với `src/foo.js` khác nhau; chưa Ctrl+Tab/sidebar/quick-open/Open/Reveal |
 | T11 | Drop đúng relative path | IMPLEMENTED_NOT_VERIFIED | Smoke: worktree không tạo `brief (1).txt`; file ngoài vào `.agentsense-import` | Chưa đủ dấu/khoảng trắng/target đóng giữa chừng |
 | T12 | Ma trận CLI | IMPLEMENTED_NOT_VERIFIED | Contract: 14 id khớp `cli_capabilities.js`. Codex không nhận env model đoán | Chưa launch/chat CLI thật |
-| T13 | Editor không giữ nội dung cũ | IMPLEMENTED_NOT_VERIFIED | R1/R2 vẫn PASS. R7: đóng tab trước debounce khi có conflict giữ tab và `UNSAVED CONFLICT BUFFER`. R8: đóng cửa sổ native ghi `EDIT JUST BEFORE WINDOW CLOSE` | Tab đã conflict từ trước không chặn quit. Chưa relaunch app để đọc lại file |
+| T13 | Editor không giữ nội dung cũ | IMPLEMENTED_NOT_VERIFIED | R1/R2/R7/R8 PASS. R9: quit khi đã conflict bị chặn, buffer còn `UNSAVED BUFFER TO KEEP`, đĩa giữ bản external | Chưa relaunch app để đọc lại file. Discard là nút riêng, không phải đóng banner |
 | T14 | Watch cây file | IMPLEMENTED_NOT_VERIFIED | `files:watch` debounce, bỏ `node_modules`/`.git` | Chưa đo burst |
 | T15 | Giữ expansion | IMPLEMENTED_NOT_VERIFIED | `refresh_preserve` giữ scroll/selection trong code | Chưa test 3 tầng |
 | T16 | Import không cắt âm thầm | IMPLEMENTED_NOT_VERIFIED | check: 101 mục đều ok; 250 mục reject cả batch, không copy | Chưa đối chiếu số trên UI |
@@ -68,7 +68,7 @@ Trạng thái dưới đây không phải PASS của public release. `FIXED_VERI
 
 | Mục con | Trạng thái | Kết quả | Bằng chứng | Còn thiếu |
 | --- | --- | --- | --- | --- |
-| T28a | IMPLEMENTED_NOT_VERIFIED | R7/R8 PASS trên `scripts/codex_review_editor_lifecycle.js` | evidence `codex-review-editor-e6e3d86-1793706192197.json` | Quit không bị chặn bởi tab conflict đã hiện từ trước |
+| T28a | IMPLEMENTED_NOT_VERIFIED | R7/R8/R9 PASS. Conflict đã biết chặn close cho đến khi Discard | evidence conflicted-quit và editor lifecycle sau `e6e3d86` | Chưa đo nhiều workspace cùng lúc trên UI |
 | T28b | IMPLEMENTED_NOT_VERIFIED | Quick-open đọc root hiện tại lúc gõ, không đóng root lần tạo overlay | `open_quick_open` | Chưa bấm Ctrl+P sau khi đổi worktree |
 | T28c | IMPLEMENTED_NOT_VERIFIED | Smoke workbench/mobile và lifecycle vẫn pass. Fixture R1–R6 exit 0 sau sửa | evidence timestamp bên dưới. Evidence FAIL gốc không sửa | Chưa phủ hết T01–T27 |
 | T28d | NOT_RUN | | | Windows sạch, path tiếng Việt, upgrade hai artifact |
@@ -125,9 +125,9 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 ## 8. Dành cho Codex
 
 - CODEX_REVIEW_STATE: CHANGES_REQUESTED
-- HEAD review mới nhất: `c0c5e371face5474490a1cf47f6114f98e6b45e3`, ngày 03/11/2026. Review vòng 1 ở `4edad8c` giữ trong báo cáo lịch sử.
-- Quyết định vòng 2: R1–R6 đã PASS độc lập, nhưng chưa đạt điều kiện push/tạo PR vì R7/R8 mất nội dung chưa lưu và native teardown C1. Người dùng đã cho phép Codex push/tạo PR nếu review đạt.
-- Báo cáo hiện tại và việc sửa tiếp: [codex-review-round2.md](docs/handoffs/stabilization/codex-review-round2.md).
+- HEAD review mới nhất: `28102e32ab41b74dbd7219d823d6697528984395`, ngày 03/11/2026. Các vòng trước giữ trong báo cáo lịch sử.
+- Quyết định vòng 3: R1–R8 PASS ở ca cũ, mobile teardown hiện sạch, nhưng còn R9 [P1] quit bỏ mất buffer đã conflict. Chưa đạt điều kiện push/tạo PR mà người dùng đã cho phép khi review đạt.
+- Báo cáo hiện tại và việc sửa tiếp: [codex-review-round3.md](docs/handoffs/stabilization/codex-review-round3.md).
 - Báo cáo reviewer, ma trận T01–T28/subtask và prompt sửa tiếp cho Grok: [codex-review.md](docs/handoffs/stabilization/codex-review.md).
 - `npm run check`, workbench/mobile smoke, 20 lifecycle cycles và JS syntax đều pass. Fixture `scripts/codex_review_regressions.js` exit 1: R1–R6 FAIL; evidence ở `docs/handoffs/stabilization/evidence/codex-review-regressions.json`.
 - Không sửa implementation, không commit/push/PR/merge/release trong lượt review. Chỉ bổ sung hồ sơ review và fixture kiểm chứng. Không có kênh gửi trực tiếp Grok; prompt bàn giao nằm trong báo cáo trên.
@@ -163,4 +163,22 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 - R1–R6 chạy lại trên commit này: `docs/handoffs/stabilization/evidence/codex-review-regressions-e6e3d86-1793706200146.json`, exit 0.
 - R7/R8: `docs/handoffs/stabilization/evidence/codex-review-editor-e6e3d86-1793706192197.json`, exit 0. Evidence FAIL gốc của vòng 2 giữ nguyên.
 - Vẫn NOT_RUN: soak, dist/cài/gỡ, CLI/provider/phone/LAN/VPN, safeStorage thật, máy sạch, chữ ký, đóng/mở app 2/4/6 pane.
+- Public release: NOT_READY. Chưa push, chưa merge, chưa phát hành.
+
+## 12. Codex review vòng 3
+
+- HEAD `28102e3`: 27 Node checks, R1–R8, smoke workbench/mobile và 20 lifecycle cycles PASS. Mobile smoke không còn native exception ở lượt này.
+- **R9 [P1] FAIL:** file đã báo conflict bị `flush_dirty_editors` bỏ qua; native close được cho phép và mất buffer chưa lưu, không có user discard.
+- Fixture `scripts/codex_review_conflicted_quit.js`; evidence `docs/handoffs/stabilization/evidence/codex-review-conflicted-quit-28102e3-1793706463362.json`; exit 1.
+- Fixture R8 cũ chỉ kiểm B được lưu, chưa kiểm buffer conflict A khi quit; cần tách normal-close/known-conflict thành ca độc lập, không skip conflict để pass test cũ.
+- CHANGES_REQUESTED. Không sửa implementation/commit/push/PR/merge/release trong review. Giao việc qua `docs/handoffs/stabilization/codex-review-round3.md`.
+
+## 13. Sửa sau review vòng 3
+
+- Quit không còn bỏ qua file `conflict`. Flush không ghi đè file ngoài. Nếu còn conflict, lỗi ghi, hoặc bản chưa lưu, cửa sổ ở lại và banner nêu tên file. Nút `Discard my edits` mới là discard chủ động; sau đó close tiếp theo được phép.
+- R8 được tách khỏi conflict của R7: fixture bấm Discard, kiểm đĩa A vẫn là bản external, rồi mới đóng cửa sổ với B đang dirty.
+- Implementation: `b03fed05e9c42adf2dc3311ff1504a4aaa5f4fd3`. Evidence ghi khi HEAD là commit đó.
+- R9: `docs/handoffs/stabilization/evidence/codex-review-conflicted-quit-b03fed0-1793706961388.json`, cửa sổ không đóng, buffer còn nguyên. Evidence FAIL gốc của vòng 3 giữ nguyên.
+- R7/R8 sau khi Discard rõ ràng: `docs/handoffs/stabilization/evidence/codex-review-editor-b03fed0-1793706965739.json`.
+- R1–R6: `docs/handoffs/stabilization/evidence/codex-review-regressions-b03fed0-1793706974267.json`.
 - Public release: NOT_READY. Chưa push, chưa merge, chưa phát hành.

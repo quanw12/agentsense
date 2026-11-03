@@ -1,0 +1,26 @@
+{
+  "reviewedHead": "28102e32ab41b74dbd7219d823d6697528984395",
+  "createdAt": "2026-11-03T11:47:43.362Z",
+  "fixtureRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-review-conflict-tivtVw",
+  "results": [
+    {
+      "id": "SETUP",
+      "passed": true,
+      "actual": {
+        "status": "conflict",
+        "buffer": "UNSAVED BUFFER TO KEEP",
+        "disk": "EXTERNAL DISK VERSION"
+      }
+    },
+    {
+      "id": "R9",
+      "passed": false,
+      "actual": {
+        "expectation": "Known-conflict buffer blocks close unless explicitly resolved/discarded or persisted for recovery",
+        "windowClosed": true,
+        "disk": "EXTERNAL DISK VERSION",
+        "userDiscarded": false
+      }
+    }
+  ]
+}
