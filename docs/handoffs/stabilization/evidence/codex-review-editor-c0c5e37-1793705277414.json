@@ -1,0 +1,35 @@
+{
+  "reviewedHead": "c0c5e371face5474490a1cf47f6114f98e6b45e3",
+  "createdAt": "2026-11-03T11:27:57.413Z",
+  "fixtureRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-review-editor-njpea4",
+  "results": [
+    {
+      "id": "CONTROL",
+      "expectation": "Normal dirty-tab close saves its buffer",
+      "passed": true,
+      "actual": {
+        "disk": "SAVED ON CLOSE"
+      }
+    },
+    {
+      "id": "R7",
+      "expectation": "A close-time conflict retains the dirty tab and recoverable buffer",
+      "passed": false,
+      "actual": {
+        "retained": false,
+        "reopened": "EXTERNAL CHANGE",
+        "disk": "EXTERNAL CHANGE",
+        "banner": "a.txt changed on disk. Your edits are still in the editor and were not overwritten."
+      }
+    },
+    {
+      "id": "R8",
+      "expectation": "Native app close preserves edits pending the autosave debounce",
+      "passed": false,
+      "actual": {
+        "disk": "original B",
+        "expected": "EDIT JUST BEFORE WINDOW CLOSE"
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+
+PASS 14 built-in CLI entries include Gemini, Copilot, Pi and Hermes
+PASS two real PowerShell terminals start through the launch page
+PASS file explorer is on the right
+PASS hidden files are visible
+PASS opening a file creates one reusable tab
+PASS file contents render as text
+PASS tab view control is gone
+PASS focus and double-click keep every pane visible
+PASS focus does not move pane bounds by more than 1px
+PASS Ctrl+Tab selects another agent without hiding panes
+Error: Timed out: terminal refit after hiding explorer
+    at until (C:\StudyBase\AgentSense\scripts\smoke_workbench.js:30:45)
+    at async run (C:\StudyBase\AgentSense\scripts\smoke_workbench.js:94:3)

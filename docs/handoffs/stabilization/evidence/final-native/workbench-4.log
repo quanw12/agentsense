@@ -1,0 +1,33 @@
+
+PASS 14 built-in CLI entries include Gemini, Copilot, Pi and Hermes
+PASS two real PowerShell terminals start through the launch page
+PASS file explorer is on the right
+PASS hidden files are visible
+PASS opening a file creates one reusable tab
+PASS file contents render as text
+PASS tab view control is gone
+PASS focus and double-click keep every pane visible
+PASS focus does not move pane bounds by more than 1px
+PASS Ctrl+Tab selects another agent without hiding panes
+FAIL hiding explorer refits terminals and exposes toggle state
+PASS explorer shortcut and keyboard resizing persist
+PASS tree drag targets only the receiving agent and never submits
+PASS open file tabs can be dragged to a different agent
+PASS workbench shortcut keystrokes do not leak into the shell
+PASS isolated agent runs in its worktree
+PASS drop references the worktree file and does not overwrite it
+PASS external files land in the receiving worktree import folder
+PASS image previews load
+PASS panel visibility and width survive reload
+PASS sessions reattach without respawning
+PASS another workspace keeps its own files panel
+PASS custom CLI launches with the standard session lifecycle
+PASS no renderer errors
+shells before exit: [{"terminal_id":"2cabe7ce-b018-4568-831b-c676d438bf7f","pid":18128,"alive":true,"exit_code":null,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-files-IOpGH1"},{"terminal_id":"34b6eb33-6a79-4d3e-b979-504af5b06687","pid":27620,"alive":true,"exit_code":null,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-files-IOpGH1"},{"terminal_id":"948f06fc-f544-4261-85c8-37f27646290f","pid":24264,"alive":true,"exit_code":null,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-files-IOpGH1.worktrees\\cynthia-terminal-terminal"},{"terminal_id":"fe84f780-3cfc-4593-912c-7b5d1b30ab82","pid":16588,"alive":true,"exit_code":null,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-drop-JeYyQy"}]
+shutdown step: interrupt
+shutdown step: exit-command
+shutdown step: shells-dead
+shutdown step: killed
+PASS closing an agent preserves its modified worktree
+
+Workbench smoke: 1 failed

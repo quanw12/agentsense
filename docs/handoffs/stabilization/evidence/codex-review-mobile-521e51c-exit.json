@@ -1,0 +1,8 @@
+{
+  "reviewedHead": "521e51c4c061a5c2932dc19a2ba0a2476a460f70",
+  "test": "scripts/smoke_mobile.js",
+  "assertions": "ALL CHECKS PASSED",
+  "processExitCode": -1073740791,
+  "windowsExitHex": "0xC0000409",
+  "log": "codex-review-mobile-521e51c.log"
+}

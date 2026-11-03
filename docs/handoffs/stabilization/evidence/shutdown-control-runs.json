@@ -1,0 +1,42 @@
+[
+    {
+        "suite":  "control-harness",
+        "run":  1,
+        "exit":  0
+    },
+    {
+        "suite":  "control-harness",
+        "run":  2,
+        "exit":  0
+    },
+    {
+        "suite":  "control-harness",
+        "run":  3,
+        "exit":  0
+    },
+    {
+        "suite":  "control-harness",
+        "run":  4,
+        "exit":  0
+    },
+    {
+        "suite":  "control-quit",
+        "run":  1,
+        "exit":  0
+    },
+    {
+        "suite":  "control-quit",
+        "run":  2,
+        "exit":  -1073741819
+    },
+    {
+        "suite":  "control-quit",
+        "run":  3,
+        "exit":  0
+    },
+    {
+        "suite":  "control-quit",
+        "run":  4,
+        "exit":  0
+    }
+]

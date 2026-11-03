@@ -16,7 +16,10 @@
   "type": "commonjs",
   "scripts": {
     "start": "electron .",
-    "dev": "AGENT_HUB_DEVTOOLS=1 electron .",
+    "dev": "node scripts/dev.js",
+    "check": "node scripts/check_stability.js",
+    "check:pty": "electron scripts/check_pty_lifecycle.js",
+    "check:stability": "node scripts/check_windows_stability.js",
     "dist": "electron-builder --win --dir",
     "build:app": "node scripts/build_app.mjs",
     "icons": "node scripts/gen_icons.mjs",
@@ -27,7 +30,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "mammoth": "^1.13.0",
-    "node-pty": "^1.1.0",
+    "node-pty": "1.2.0-beta.17",
     "qrcode": "^1.5.4",
     "ws": "^8.22.0"
   },

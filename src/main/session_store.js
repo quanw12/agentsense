@@ -3,8 +3,10 @@
 // module is testable without Electron. Only default_file_path() reads Electron, and only when it is called.
 //
 // Record shape:
-// { record_id, workspace_id, agent_id, title, command, cwd, claude_session_id,
+// { record_id, workspace_id, agent_id, title, command, cwd, base_cwd, claude_session_id,
+//   model_id, provider_id, last_error, resume_mode,
 //   worktree: null | { path, branch, repo_path, base_commit } }
+// Secrets (env_extra, api_key, tokens) are dropped on purpose and never written back.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -43,6 +45,7 @@ function normalize_record(raw) {
   for (const field of string_fields) {
     if (!is_non_empty_string(raw[field])) return null;
   }
+  const optional = (field) => (is_non_empty_string(raw[field]) ? raw[field] : null);
   return {
     record_id: raw.record_id,
     workspace_id: typeof raw.workspace_id === 'string' ? raw.workspace_id : null,
@@ -50,7 +53,14 @@ function normalize_record(raw) {
     title: raw.title,
     command: raw.command,
     cwd: raw.cwd,
-    claude_session_id: is_non_empty_string(raw.claude_session_id) ? raw.claude_session_id : null,
+    base_cwd: optional('base_cwd'),
+    claude_session_id: optional('claude_session_id'),
+    model_id: optional('model_id'),
+    provider_id: optional('provider_id'),
+    last_error: optional('last_error'),
+    resume_mode: raw.resume_mode === 'conversation' || raw.resume_mode === 'terminal' || raw.resume_mode === 'unverified'
+      ? raw.resume_mode
+      : null,
     worktree: normalize_worktree(raw.worktree),
   };
 }
@@ -139,14 +149,23 @@ function remove_workspace_records(file_path, workspace_id) {
 }
 
 // Only claude_session_id can be changed in place (a hook reports it after the record was written).
-function set_claude_session_id(file_path, record_id, claude_session_id) {
-  if (!is_non_empty_string(claude_session_id)) return null;
+function update_record(file_path, record_id, patch) {
   const records = list_records(file_path);
   const index = records.findIndex((record) => record.record_id === record_id);
   if (index === -1) return null;
-  records[index] = Object.assign({}, records[index], { claude_session_id });
+  records[index] = normalize_record(Object.assign({}, records[index], patch, { record_id }));
   write_records(file_path, records);
   return records[index];
+}
+
+function set_claude_session_id(file_path, record_id, claude_session_id) {
+  if (!is_non_empty_string(claude_session_id)) return null;
+  return update_record(file_path, record_id, { claude_session_id });
+}
+
+function set_last_error(file_path, record_id, last_error) {
+  const message = is_non_empty_string(last_error) ? String(last_error).slice(0, 500) : null;
+  return update_record(file_path, record_id, { last_error: message });
 }
 
 // Saved records of one workspace whose pane is not alive now. live_record_ids is a Set of record ids
@@ -168,6 +187,8 @@ module.exports = {
   remove_record,
   remove_workspace_records,
   set_claude_session_id,
+  set_last_error,
+  update_record,
   list_saved,
   normalize_record,
   FILE_NAME,

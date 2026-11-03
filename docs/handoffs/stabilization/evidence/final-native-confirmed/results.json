@@ -1,0 +1,120 @@
+{
+  "createdAt": "2026-11-03T14:28:42.385Z",
+  "node": "v26.13.0",
+  "electron": "44.9.0",
+  "sourceHashes": {
+    "main.js": "93c7eec8da4087b8f5c99f831b5bbd2303cb4205cbbe86fa93e462b47e52830d",
+    "src/main/pty_manager.js": "69e98515703b6e94771964394b785654f85b480df3838177a77e26bf906a4e34",
+    "package.json": "3ed7ca77dc0d3dc6558a6ca23b4baad3b2673dded53008193dcc1c97ce1c4011"
+  },
+  "results": [
+    {
+      "suite": "workbench",
+      "iteration": 1,
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "passed": false,
+      "logFile": "workbench-1.log"
+    },
+    {
+      "suite": "workbench",
+      "iteration": 2,
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "passed": false,
+      "logFile": "workbench-2.log"
+    },
+    {
+      "suite": "workbench",
+      "iteration": 3,
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "passed": false,
+      "logFile": "workbench-3.log"
+    },
+    {
+      "suite": "workbench",
+      "iteration": 4,
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "passed": false,
+      "logFile": "workbench-4.log"
+    },
+    {
+      "suite": "mobile",
+      "iteration": 1,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "mobile-1.log"
+    },
+    {
+      "suite": "mobile",
+      "iteration": 2,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "mobile-2.log"
+    },
+    {
+      "suite": "mobile",
+      "iteration": 3,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "mobile-3.log"
+    },
+    {
+      "suite": "mobile",
+      "iteration": 4,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "mobile-4.log"
+    },
+    {
+      "suite": "product-quit",
+      "iteration": 1,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "product-quit-1.log"
+    },
+    {
+      "suite": "product-quit",
+      "iteration": 2,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "product-quit-2.log"
+    },
+    {
+      "suite": "product-quit",
+      "iteration": 3,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "product-quit-3.log"
+    },
+    {
+      "suite": "product-quit",
+      "iteration": 4,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "product-quit-4.log"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "run": 2,
+    "exitCode": -1073741819,
+    "log": "docs/handoffs/stabilization/evidence/codex-review-workbench-521e51c-2.log"
+  },
+  {
+    "run": 3,
+    "exitCode": 0,
+    "log": "docs/handoffs/stabilization/evidence/codex-review-workbench-521e51c-3.log"
+  },
+  {
+    "run": 4,
+    "exitCode": -1073741819,
+    "log": "docs/handoffs/stabilization/evidence/codex-review-workbench-521e51c-4.log"
+  }
+]

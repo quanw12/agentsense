@@ -25,6 +25,9 @@
     const on_error = typeof settings.on_error === 'function' ? settings.on_error : () => {};
 
     let disposed = false;
+    let root_path = workspace.path;
+    let root_label = workspace.name || 'Workspace';
+    let unsubscribe_watch = () => {};
     const branch_children = new Map(); // rel dir -> rendered wrapper element
     const children_open = {}; // rel dir -> true when expanded at least once
     let drop_timer = 0;
@@ -38,15 +41,15 @@
     header.className = 'fp-header';
     const label = document.createElement('span');
     label.className = 'fp-title';
-    label.textContent = workspace.name || 'Workspace';
-    label.title = workspace.path;
+    label.textContent = root_label;
+    label.title = root_path;
     const refresh = document.createElement('button');
     refresh.className = 'fp-refresh';
     refresh.type = 'button';
     refresh.title = 'Refresh';
     refresh.textContent = '⟳';
     refresh.addEventListener('click', () => {
-      load_root_rebuild();
+      refresh_preserve();
     });
     const drop_hint = document.createElement('span');
     drop_hint.className = 'fp-drop-hint';
@@ -83,7 +86,7 @@
     }
 
     async function list_dir(rel_dir) {
-      return window.hub.files.list(workspace.path, rel_dir || '');
+      return window.hub.files.list(root_path, rel_dir || '');
     }
 
     // Reloads the root list and throws the whole tree away (refresh and first load).
@@ -374,13 +377,88 @@
       return String(value).replace(/["\\]/g, '\\$&');
     }
 
+    async function refresh_preserve() {
+      if (disposed) return;
+      const open_rels = Object.keys(children_open).sort((a, b) => a.split('/').length - b.split('/').length);
+      const scroll = tree.scrollTop;
+      const selected = selected_path;
+      let entries;
+      try {
+        entries = await list_dir('');
+      } catch (error) {
+        if (disposed) return;
+        tree.textContent = '';
+        const note = document.createElement('div');
+        note.className = 'fp-empty';
+        note.textContent = `Could not read ${root_path}: ${error_text(error)}`;
+        tree.append(note);
+        return;
+      }
+      if (disposed) return;
+      branch_children.clear();
+      const present = new Set(entries.map((entry) => entry.rel || entry.name));
+      const wrapper = render_children('', normalize_list(entries));
+      branch_children.set('', wrapper);
+      tree.textContent = '';
+      tree.append(wrapper);
+      for (const rel of open_rels) {
+        if (!rel) continue;
+        const row = tree.querySelector(`.fp-row[data-path="${css_escape(rel)}"]`);
+        if (!row) {
+          delete children_open[rel];
+          continue;
+        }
+        try {
+          const nested = await list_dir(rel);
+          if (disposed) return;
+          children_open[rel] = true;
+          row.classList.add('fp-open');
+          row.setAttribute('aria-expanded', 'true');
+          const caret = row.querySelector('.fp-caret');
+          if (caret) caret.textContent = '▾';
+          apply_children(rel, normalize_list(nested));
+          for (const item of nested) present.add(item.rel);
+        } catch (error) {
+          delete children_open[rel];
+        }
+      }
+      if (selected && present.has(selected)) select(selected);
+      else selected_path = null;
+      tree.scrollTop = scroll;
+    }
+
+    function set_context(next) {
+      const next_path = next && next.path ? next.path : workspace.path;
+      const changed = next_path !== root_path;
+      root_path = next_path;
+      root_label = next && next.label ? next.label : (workspace.name || 'Workspace');
+      label.textContent = root_label;
+      label.title = root_path;
+      if (!changed) return;
+      branch_children.clear();
+      for (const key of Object.keys(children_open)) delete children_open[key];
+      selected_path = null;
+      load_root_rebuild();
+      if (window.hub.files.watch) window.hub.files.watch(root_path).catch(() => {});
+    }
+
     function dispose() {
       disposed = true;
       if (drop_timer) window.clearTimeout(drop_timer);
+      unsubscribe_watch();
+      if (window.hub.files.unwatch) window.hub.files.unwatch(root_path).catch(() => {});
       root.remove();
     }
 
     load_root_rebuild();
+    if (window.hub.files.watch) window.hub.files.watch(root_path).catch(() => {});
+    if (window.hub.files.on_changed) {
+      unsubscribe_watch = window.hub.files.on_changed((payload) => {
+        if (disposed || !payload) return;
+        if (payload.root && root_path && String(payload.root).toLowerCase() !== String(root_path).toLowerCase()) return;
+        refresh_preserve();
+      });
+    }
 
     function select(rel_path) {
       selected_path = rel_path;
@@ -392,8 +470,10 @@
     }
 
     return {
-      refresh: load_root_rebuild,
+      refresh: refresh_preserve,
       select,
+      set_context,
+      current_root: () => root_path,
       dispose,
     };
   }

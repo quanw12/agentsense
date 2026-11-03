@@ -1,0 +1,53 @@
+
+PASS static: wrong token is 404
+PASS static: path without token is 404
+PASS static: index page served
+PASS static: xterm.js served
+PASS static: agents.js served
+PASS static: agent logo served
+PASS static: traversal blocked
+PASS ws: wrong token rejected
+PASS ws: snapshot on connect
+PASS ws: desktop pane listed
+PASS ws: attach replies with buffer
+PASS ws: input reaches the pty and output comes back
+PASS ws: agents_check works
+PASS ws: no error messages so far
+PASS ws: phone-created pane arrives as created
+PASS ws: terminal_created event emitted for the desktop
+PASS ws: unknown workspace refused
+PASS ws: kill replies killed + closed
+PASS ws: killed session is gone from pty_manager
+PASS lockout: correct token is locked out after 3 wrong ones
+C:\StudyBase\AgentSense\node_modules\node-pty\lib\conpty_console_list_agent.js:13
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\StudyBase\AgentSense\node_modules\node-pty\lib\conpty_console_list_agent.js:13:26)
+    at Module._compile (node:internal/modules/cjs/loader:1937:14)
+    at Object..js (node:internal/modules/cjs/loader:2070:10)
+    at Module.load (node:internal/modules/cjs/loader:1658:32)
+    at Module._load (node:internal/modules/cjs/loader:1450:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:268:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.22.0
+
+ALL CHECKS PASSED
+C:\StudyBase\AgentSense\node_modules\node-pty\lib\conpty_console_list_agent.js:13
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\StudyBase\AgentSense\node_modules\node-pty\lib\conpty_console_list_agent.js:13:26)
+    at Module._compile (node:internal/modules/cjs/loader:1937:14)
+    at Object..js (node:internal/modules/cjs/loader:2070:10)
+    at Module.load (node:internal/modules/cjs/loader:1658:32)
+    at Module._load (node:internal/modules/cjs/loader:1450:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:268:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.22.0

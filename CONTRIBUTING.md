@@ -38,7 +38,10 @@ Scope names follow the folder: `panes`, `sidebar`, `launch`, `worktrees`,
 ```bash
 npm install
 npm run start     # app opens, terminal panes spawn
-npm run dist      # electron-builder finishes without errors
+npm run check
+npm run check:pty  # final output, concurrent exit/close, resume and shutdown admission
+npm run check:stability  # repeated native smoke processes; checks real exit codes
+npm run build:app  # rebuild and verify the installer payload
 ```
 
 No linter is wired up yet — keep the existing code style (plain CommonJS in

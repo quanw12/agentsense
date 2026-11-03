@@ -1,0 +1,7 @@
+{
+  "junction_reads_outside_workspace": true,
+  "import_requested": 101,
+  "import_results": 100,
+  "import_ok": 100,
+  "session_retains_model_api": false
+}

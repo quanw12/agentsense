@@ -204,7 +204,8 @@
         create_element(
           'p',
           'mobile_note',
-          'First start may ask to allow AgentSense through Windows Firewall — allow it on private networks. ' +
+          (snapshot.scope_note || 'Mobile access stays on this LAN or a VPN. It is not a public internet service.') +
+            ' First start may ask to allow AgentSense through Windows Firewall — allow it on private networks. ' +
             'Away from home, install Tailscale on this PC and your phone and keep this switch on; ' +
             'do not port-forward this page to the internet.'
         )

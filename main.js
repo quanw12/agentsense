@@ -2,7 +2,7 @@
 // kills every pty when the app quits.
 const path = require('path');
 
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain } = require('electron');
 const { migrate_legacy_state } = require('./src/main/migrate_state');
 
 // Product identity. setName must run before anything reads userData, because the default userData
@@ -135,6 +135,27 @@ function create_main_window() {
   main_window.removeMenu();
   register_shortcuts(main_window);
 
+  let flush_in_progress = false;
+  main_window.on('close', (event) => {
+    if (main_window.flush_complete) return;
+    event.preventDefault();
+    if (flush_in_progress || main_window.webContents.isDestroyed()) return;
+    flush_in_progress = true;
+    main_window.webContents.executeJavaScript(
+      'window.__grid && window.__grid.flush_editors ? window.__grid.flush_editors() : { ok: true }'
+    ).then((result) => {
+      flush_in_progress = false;
+      if (!main_window || main_window.isDestroyed()) return;
+      if (result && result.ok) {
+        main_window.flush_complete = true;
+        main_window.close();
+      }
+    }).catch((error) => {
+      flush_in_progress = false;
+      console.error(`could not flush editors before close: ${error && error.message ? error.message : error}`);
+    });
+  });
+
   main_window.on('closed', () => {
     main_window = null;
   });
@@ -157,6 +178,12 @@ if (!got_lock) {
   app.whenReady().then(async () => {
     // Before any window exists: the default application menu is not created.
     Menu.setApplicationMenu(null);
+    ipcMain.handle('app:info', () => ({
+      name: 'AgentSense',
+      version: app.getVersion(),
+      platform: 'win32-x64',
+      commit: process.env.AGENTSENSE_COMMIT || null,
+    }));
     register_workspace_ipc();
     register_agent_ipc();
     register_clipboard_ipc();
@@ -179,9 +206,19 @@ if (!got_lock) {
     });
   });
 
-  app.on('will-quit', () => {
-    get_mobile_server().stop();
-    pty_manager.kill_all();
+  let quit_state = 'open';
+  app.on('will-quit', (event) => {
+    if (quit_state === 'done') return;
+    event.preventDefault();
+    if (quit_state === 'draining') return;
+    quit_state = 'draining';
+    const terminals_done = pty_manager.shutdown();
+    Promise.all([terminals_done, get_mobile_server().stop(), get_hook_server().stop()]).catch((error) => {
+      console.error(`terminal shutdown failed: ${error && error.message ? error.message : error}`);
+    }).finally(() => {
+      quit_state = 'done';
+      app.quit();
+    });
   });
 
   app.on('window-all-closed', () => {

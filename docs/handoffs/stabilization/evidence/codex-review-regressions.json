@@ -1,0 +1,68 @@
+{
+  "reviewedHead": "4edad8c",
+  "createdAt": "2026-11-03T10:46:33.537Z",
+  "fixtureRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-WjUFCt",
+  "results": [
+    {
+      "id": "R1",
+      "expectation": "Editing a 600 KiB text file preserves its unseen tail",
+      "passed": false,
+      "actual": {
+        "before": 614400,
+        "shown": 524288,
+        "after": 524292
+      }
+    },
+    {
+      "id": "R2",
+      "expectation": "A conflicted buffer survives switching tabs",
+      "passed": false,
+      "actual": {
+        "statusBeforeSwitch": "conflict",
+        "editorAfterReturn": "EXTERNAL DISK UPDATE"
+      }
+    },
+    {
+      "id": "R3",
+      "expectation": "Metadata edits cannot erase a legacy key when secure storage is unavailable",
+      "passed": false,
+      "actual": {
+        "rejected": false,
+        "secretStatus": "empty",
+        "keyRetained": false
+      }
+    },
+    {
+      "id": "R4",
+      "expectation": "Cold restore preserves a saved 70/30 split",
+      "passed": false,
+      "actual": {
+        "savedRatio": 0.7,
+        "restoredRatio": 0.5,
+        "widths": [
+          465.20001220703125,
+          465.20001220703125
+        ]
+      }
+    },
+    {
+      "id": "R5",
+      "expectation": "Clicking inside a worktree terminal updates the explorer root",
+      "passed": false,
+      "actual": {
+        "expectedRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-WjUFCt\\workspace.worktrees\\matthew-terminal-terminal",
+        "actualRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-codex-review-WjUFCt\\workspace"
+      }
+    },
+    {
+      "id": "R6",
+      "expectation": "Restart retains worktree metadata in main and on disk",
+      "passed": false,
+      "actual": {
+        "cwdRetained": true,
+        "mainWorktree": null,
+        "diskWorktree": null
+      }
+    }
+  ]
+}

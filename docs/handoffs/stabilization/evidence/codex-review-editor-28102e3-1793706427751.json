@@ -1,0 +1,35 @@
+{
+  "reviewedHead": "28102e32ab41b74dbd7219d823d6697528984395",
+  "createdAt": "2026-11-03T11:47:07.751Z",
+  "fixtureRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-review-editor-LrpkLF",
+  "results": [
+    {
+      "id": "CONTROL",
+      "expectation": "Normal dirty-tab close saves its buffer",
+      "passed": true,
+      "actual": {
+        "disk": "SAVED ON CLOSE"
+      }
+    },
+    {
+      "id": "R7",
+      "expectation": "A close-time conflict retains the dirty tab and recoverable buffer",
+      "passed": true,
+      "actual": {
+        "retained": true,
+        "reopened": "UNSAVED CONFLICT BUFFER",
+        "disk": "EXTERNAL CHANGE",
+        "banner": "a.txt changed on disk. Your edits are still in the editor and were not overwritten."
+      }
+    },
+    {
+      "id": "R8",
+      "expectation": "Native app close preserves edits pending the autosave debounce",
+      "passed": true,
+      "actual": {
+        "disk": "EDIT JUST BEFORE WINDOW CLOSE",
+        "expected": "EDIT JUST BEFORE WINDOW CLOSE"
+      }
+    }
+  ]
+}

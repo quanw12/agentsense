@@ -13,12 +13,20 @@ function broadcast(channel, ...args) {
 }
 
 function register_terminal_ipc() {
+  pty_manager.set_desktop_present(() => BrowserWindow.getAllWindows().some(
+    (window) => !window.isDestroyed() && window.isVisible() && !window.isMinimized()
+  ));
   ipcMain.handle('terminals:create', (_event, opts) => pty_manager.create_terminal(opts));
   ipcMain.on('terminals:write', (_event, terminal_id, data) => {
     pty_manager.write_terminal(terminal_id, data);
   });
   ipcMain.on('terminals:resize', (_event, terminal_id, cols, rows) => {
-    pty_manager.resize_terminal(terminal_id, cols, rows);
+    pty_manager.resize_terminal(terminal_id, cols, rows, 'desktop');
+  });
+  ipcMain.handle('terminals:close', async (_event, terminal_id, options) => {
+    const result = await pty_manager.close_terminal(terminal_id, options || {});
+    broadcast('terminals:closed', terminal_id);
+    return result;
   });
   ipcMain.handle('terminals:kill', async (_event, terminal_id) => {
     const result = await pty_manager.kill_terminal(terminal_id);

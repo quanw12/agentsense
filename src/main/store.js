@@ -1,6 +1,6 @@
 // Workspace and preset persistence: a JSON file in app.getPath('userData').
-// Shape: { workspaces: [{ id, name, path }], presets: [{ id, name, seats: [agent_id, ...] }] }
-// Files written before presets existed have no `presets` key and still load.
+// Shape: { workspaces: [{ id, name, path }], presets: [{ id, name, use_worktree, seats: [seat, ...] }] }
+// A seat is { agent_id, label, command, model_id, provider_id }. Older files stored seats as agent id strings.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -15,6 +15,21 @@ function state_file_path() {
 }
 
 // Keeps only well-formed presets, so a hand-edited file cannot break the dialog.
+function normalize_seat(seat) {
+  if (typeof seat === 'string' && seat.trim() !== '') {
+    return { agent_id: seat.trim(), label: null, command: null, model_id: null, provider_id: null };
+  }
+  if (!seat || typeof seat !== 'object' || typeof seat.agent_id !== 'string' || seat.agent_id.trim() === '') return null;
+  const text = (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
+  return {
+    agent_id: seat.agent_id.trim(),
+    label: text(seat.label),
+    command: text(seat.command),
+    model_id: text(seat.model_id),
+    provider_id: text(seat.provider_id),
+  };
+}
+
 function normalize_presets(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -22,9 +37,8 @@ function normalize_presets(raw) {
     .map((preset) => ({
       id: preset.id,
       name: preset.name,
-      seats: preset.seats
-        .filter((seat) => typeof seat === 'string' && seat.trim() !== '')
-        .slice(0, MAX_SEATS),
+      use_worktree: preset.use_worktree === true,
+      seats: preset.seats.map(normalize_seat).filter(Boolean).slice(0, MAX_SEATS),
     }));
 }
 
@@ -117,10 +131,9 @@ function validate_seats(seats) {
     throw new Error(`seats must be an array of 1 to ${MAX_SEATS} agent ids`);
   }
   return seats.map((seat, index) => {
-    if (typeof seat !== 'string' || seat.trim() === '') {
-      throw new Error(`seat ${index + 1} must be a non-empty agent id`);
-    }
-    return seat.trim();
+    const normalized = normalize_seat(seat);
+    if (!normalized) throw new Error(`seat ${index + 1} must be an agent id or a seat object`);
+    return normalized;
   });
 }
 
@@ -134,15 +147,18 @@ function save_preset(preset) {
   }
   const name = preset.name.trim().slice(0, MAX_PRESET_NAME_LENGTH).trim();
   const seats = validate_seats(preset.seats);
+  const use_worktree = preset.use_worktree === true;
 
   const state = read_state();
   const preset_id = preset.id === undefined || preset.id === null ? null : preset.id;
+  const duplicate = state.presets.find((item) => item.name.toLowerCase() === name.toLowerCase() && item.id !== preset_id);
+  if (duplicate) throw new Error(`a preset named ${name} already exists`);
   if (preset_id !== null && (typeof preset_id !== 'string' || preset_id.trim() === '')) {
     throw new Error('preset id must be a non-empty string');
   }
 
   if (preset_id === null) {
-    const created = { id: crypto.randomUUID(), name, seats };
+    const created = { id: crypto.randomUUID(), name, use_worktree, seats };
     state.presets.push(created);
     write_state(state);
     return created;
@@ -150,7 +166,7 @@ function save_preset(preset) {
 
   const index = state.presets.findIndex((item) => item.id === preset_id);
   if (index === -1) throw new Error(`preset not found: ${preset_id}`);
-  const updated = { id: preset_id, name, seats };
+  const updated = { id: preset_id, name, use_worktree, seats };
   state.presets[index] = updated;
   write_state(state);
   return updated;

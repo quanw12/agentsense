@@ -112,15 +112,69 @@ try {
     Write-Host "Installing AgentSense to $install_dir"
   }
 
-  # robocopy /MIR makes the install folder match the app folder (files from older builds are removed).
-  # Exit codes 0 to 7 are success; 8 and above are failures.
-  $robocopy_args = @($app_dir, $install_dir, '/MIR', '/NFL', '/NDL', '/NJH', '/NJS', '/NP')
-  & robocopy.exe @robocopy_args | Out-Null
+  # Stage the new build beside the install folder, verify it, then swap. A failed copy never replaces a working install.
+  # %APPDATA%\AgentSense is not a path this script accepts.
+  $parent = Split-Path -Parent $install_dir
+  New-Item -ItemType Directory -Force -Path $parent | Out-Null
+  $stage = Join-Path $parent ("AgentSense.staging-" + $PID)
+  $backup = Join-Path $parent ("AgentSense.backup-" + $PID)
+  function assert_install_path([string]$candidate) {
+    $full = [System.IO.Path]::GetFullPath($candidate)
+    $root = [System.IO.Path]::GetFullPath($parent).TrimEnd('\') + '\'
+    $appdata = [System.IO.Path]::GetFullPath($env:APPDATA).TrimEnd('\') + '\'
+    if ($full.TrimEnd('\') -eq $appdata.TrimEnd('\') -or $full.StartsWith($appdata, [System.StringComparison]::OrdinalIgnoreCase)) {
+      throw "Refusing to change $full because it is inside %APPDATA%."
+    }
+    if (-not ($full.TrimEnd('\') -eq $root.TrimEnd('\') -or $full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase))) {
+      throw "Refusing to change $full because it is outside $parent."
+    }
+  }
+  assert_install_path $install_dir
+  assert_install_path $stage
+  assert_install_path $backup
+  if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+  New-Item -ItemType Directory -Force -Path $stage | Out-Null
+  & robocopy.exe $app_dir $stage /E /NFL /NDL /NJH /NJS /NP | Out-Null
   if ($LASTEXITCODE -ge 8) {
-    throw "Copying the files failed (robocopy exit code $LASTEXITCODE). Close AgentSense if it is open, then run this installer again."
+    Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    throw "Copying the files failed (robocopy exit code $LASTEXITCODE). The existing install was not replaced."
+  }
+  $staged_exe = Join-Path $stage 'AgentSense.exe'
+  if (-not (Test-Path -LiteralPath $staged_exe)) {
+    Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    throw "The staged copy did not produce AgentSense.exe. The existing install was not replaced."
+  }
+  # Validate the copied payload before renaming the previous installation.
+  $manifest_file = Join-Path $stage 'BUILD.json'
+  if (-not (Test-Path -LiteralPath $manifest_file)) { throw 'BUILD.json is missing. The existing install was not replaced.' }
+  $manifest = Get-Content -LiteralPath $manifest_file -Raw | ConvertFrom-Json
+  if ($manifest.exe_sha256 -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash -LiteralPath $staged_exe -Algorithm SHA256).Hash -ne $manifest.exe_sha256) {
+    throw 'The staged executable checksum is invalid. The existing install was not replaced.'
+  }
+  $resources = [System.IO.Path]::GetFullPath((Join-Path $stage 'resources\app')).TrimEnd('\') + '\'
+  if (-not $manifest.source_hashes -or @($manifest.source_hashes.PSObject.Properties).Count -eq 0) { throw 'BUILD.json has no source checksums.' }
+  foreach ($entry in $manifest.source_hashes.PSObject.Properties) {
+    $file = [System.IO.Path]::GetFullPath((Join-Path $resources $entry.Name))
+    if (-not $file.StartsWith($resources, [System.StringComparison]::OrdinalIgnoreCase) -or $entry.Value -notmatch '^[a-fA-F0-9]{64}$') {
+      throw 'BUILD.json contains an invalid file entry.'
+    }
+    if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $entry.Value) { throw "Staged file checksum mismatch: $($entry.Name)" }
+  }
+  if ($upgrading) {
+    Rename-Item -LiteralPath $install_dir -NewName (Split-Path -Leaf $backup)
+    try {
+      Rename-Item -LiteralPath $stage -NewName (Split-Path -Leaf $install_dir)
+    } catch {
+      Rename-Item -LiteralPath $backup -NewName (Split-Path -Leaf $install_dir)
+      throw
+    }
+    Remove-Item -LiteralPath $backup -Recurse -Force
+  } else {
+    if (Test-Path -LiteralPath $install_dir) { Remove-Item -LiteralPath $install_dir -Force }
+    Rename-Item -LiteralPath $stage -NewName (Split-Path -Leaf $install_dir)
   }
   if (-not (Test-Path -LiteralPath $installed_exe)) {
-    throw "The copy did not produce $installed_exe."
+    throw "The swap did not produce $installed_exe."
   }
 
   # Files extracted from a downloaded zip carry the download mark. Remove it so Windows does not block them.

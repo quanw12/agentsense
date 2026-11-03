@@ -1,0 +1,44 @@
+{
+  "reviewedHead": "b03fed05e9c42adf2dc3311ff1504a4aaa5f4fd3",
+  "createdAt": "2026-11-03T11:56:05.739Z",
+  "fixtureRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-review-editor-1qAF2F",
+  "results": [
+    {
+      "id": "CONTROL",
+      "expectation": "Normal dirty-tab close saves its buffer",
+      "passed": true,
+      "actual": {
+        "disk": "SAVED ON CLOSE"
+      }
+    },
+    {
+      "id": "R7",
+      "expectation": "A close-time conflict retains the dirty tab and recoverable buffer",
+      "passed": true,
+      "actual": {
+        "retained": true,
+        "reopened": "UNSAVED CONFLICT BUFFER",
+        "disk": "EXTERNAL CHANGE",
+        "banner": "a.txt changed on disk. Your edits are still in the editor and were not overwritten."
+      }
+    },
+    {
+      "id": "R7_DISCARD",
+      "expectation": "Discard is explicit and keeps the external file",
+      "passed": true,
+      "actual": {
+        "disk": "EXTERNAL CHANGE"
+      }
+    },
+    {
+      "id": "R8",
+      "expectation": "Native app close preserves edits pending the autosave debounce",
+      "passed": true,
+      "actual": {
+        "disk": "EDIT JUST BEFORE WINDOW CLOSE",
+        "expected": "EDIT JUST BEFORE WINDOW CLOSE",
+        "conflictedFile": "EXTERNAL CHANGE"
+      }
+    }
+  ]
+}

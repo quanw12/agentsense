@@ -57,6 +57,11 @@ async function build_state() {
     keep_awake: settings.keep_awake,
     token: settings.token,
     urls,
+    loopback_url: connection ? pairing_url(connection, '127.0.0.1') : null,
+    scope: settings.bind_all ? 'lan' : 'loopback',
+    scope_note: settings.bind_all
+      ? 'Listening on this LAN or VPN. This is not a public internet service and the link is not HTTPS.'
+      : 'Listening on this computer only (loopback). Other devices cannot connect until LAN access is turned on.',
     qr_svg,
     clients: server.client_count(),
   };
