@@ -1387,8 +1387,9 @@
   }
 
   function enqueue_save(grid, pane, file, snapshot, generation) {
+    const epoch = file.save_epoch || 0;
     const previous = file.save_tail || Promise.resolve();
-    const run = previous.then(() => perform_save(grid, pane, file, snapshot, generation));
+    const run = previous.then(() => perform_save(grid, pane, file, snapshot, generation, epoch));
     file.save_tail = run.then(() => null, () => null);
     return run;
   }
@@ -1401,12 +1402,20 @@
     return enqueue_save(grid, pane, file, file.buffer, file.edit_generation || 0);
   }
 
-  async function perform_save(grid, pane, file, snapshot, generation) {
-    if (!file || file.editable === false) return { saved: false, error: true };
-    if (!file.dirty && file.disk === snapshot && !file.conflict) return { saved: true };
+  function save_still_current(file, epoch) {
+    return !!file && (file.save_epoch || 0) === epoch;
+  }
+
+  async function perform_save(grid, pane, file, snapshot, generation, epoch) {
+    if (!save_still_current(file, epoch) || file.editable === false) return { saved: false, cancelled: true };
+    if (!file.dirty) {
+      return file.disk === snapshot && !file.conflict ? { saved: true } : { saved: false, cancelled: true };
+    }
     if (file.status_el) file.status_el.textContent = 'saving';
     try {
+      if (!save_still_current(file, epoch)) return { saved: false, cancelled: true };
       const outcome = await window.hub.files.write(file.root, file.path, snapshot, file.mtime, file.loaded_bytes);
+      if (!save_still_current(file, epoch)) return { saved: false, cancelled: true };
       if (outcome && outcome.conflict) {
         file.conflict = true;
         file.dirty = true;
@@ -1434,6 +1443,7 @@
       render_file_tabs(grid, pane);
       return { saved: true };
     } catch (error) {
+      if (!save_still_current(file, epoch)) return { saved: false, cancelled: true };
       file.dirty = true;
       if (file.status_el) file.status_el.textContent = 'error';
       show_banner(grid, `Could not save ${file.name}: ${error_text(error)}`);
@@ -1448,10 +1458,15 @@
     discard.type = 'button';
     discard.title = 'Replace the unsaved edits with the file on disk';
     discard.addEventListener('click', () => {
+      file.save_epoch = (file.save_epoch || 0) + 1;
+      if (file.save_timer) {
+        window.clearTimeout(file.save_timer);
+        file.save_timer = 0;
+      }
       file.conflict = false;
       file.dirty = false;
       file.loaded = false;
-      pane.active = pane.files.indexOf(file);
+      pane.active = Math.max(0, pane.files.indexOf(file));
       void load_file_content(grid, pane);
     });
     meta.append(discard);

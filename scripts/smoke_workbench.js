@@ -188,10 +188,30 @@ async function run(window) {
   check('no renderer errors', errors.length === 0);
   if (errors.length) console.log(errors.join('\n'));
   // Exit the test shells before closing their ConPTY handles, so node-pty's process-list helper can detach.
+  const shells_before_exit = pty.list_terminals().map((t) => ({
+    terminal_id: t.terminal_id,
+    alive: t.alive,
+    exit_code: t.exit_code,
+    command: t.command,
+    cwd: t.cwd,
+  }));
+  console.log(`shells before exit: ${JSON.stringify(shells_before_exit)}`);
   await js(`for (const s of await window.hub.terminals.list()) window.hub.terminals.write(s.terminal_id, '\\x03');`);
   await delay(100);
   await js(`for (const s of await window.hub.terminals.list()) window.hub.terminals.write(s.terminal_id, 'exit\\r');`);
-  await until(() => pty.list_terminals().every((t) => !t.alive), 'test shells exit');
+  try {
+    await until(() => pty.list_terminals().every((t) => !t.alive), 'test shells exit');
+  } catch (error) {
+    const stuck = pty.list_terminals().map((t) => ({
+      terminal_id: t.terminal_id,
+      alive: t.alive,
+      exit_code: t.exit_code,
+      command: t.command,
+      cwd: t.cwd,
+    }));
+    console.error(`test shells still alive: ${JSON.stringify(stuck)}`);
+    throw error;
+  }
   await js('for (const s of await window.hub.terminals.list()) await window.hub.terminals.kill(s.terminal_id)');
   // The worktree contains dropped files, so normal close must preserve it.
   check('closing an agent preserves its modified worktree', fs.existsSync(staged_external));
