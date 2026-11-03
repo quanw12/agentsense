@@ -12,7 +12,7 @@ Người thực hiện: Grok 4.7. Người review: Codex. Không push, không me
 - Repo root: `C:\StudyBase\AgentSense`
 - OS / CPU: Windows 10.0.26300, x64. Node v24.11.1, npm 11.6.3, Electron 44.9.0
 - Branch local: `fix/workbench-stability`
-- Local commits: `03dda35`, `78f9e35`, `0260de4`, `4edad8c`, `53a24d5`, `c0c5e37`, `e6e3d86`, `28102e3`, `b03fed0`, `34b7ce3`, `cbc555d`, rồi commit ghi SHA này
+- Local commits: `03dda35`, `78f9e35`, `0260de4`, `4edad8c`, `53a24d5`, `c0c5e37`, `e6e3d86`, `28102e3`, `b03fed0`, `34b7ce3`, `cbc555d`, `521e51c`, `146576b`
 - HEAD lúc bắt đầu: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa` (`main`, khớp baseline audit)
 - BASE_SHA dùng để review: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa`
 - Git status trước khi làm: `main` sạch ngoài các file handoff chưa track (`grok-4.7-prompt.md`, `stabilization-*.md`, `codex-review-prompt.md`, `docs/handoffs/stabilization/`)
@@ -46,7 +46,7 @@ Trạng thái dưới đây không phải PASS của public release. `FIXED_VERI
 | T20 | Một chủ PTY size | IMPLEMENTED_NOT_VERIFIED | Mobile resize không áp khi có cửa sổ desktop | Chưa 2 WebSocket và chưa máy thật |
 | T21 | Rate limit theo nguồn | IMPLEMENTED_NOT_VERIFIED | check: A lock, B không. Smoke mobile: cùng nguồn vẫn lock sau 3 token sai | Chưa rotate token + expiry trên HTTP |
 | T22 | Mobile LAN/VPN | IMPLEMENTED_NOT_VERIFIED | UI/state nói loopback và LAN, không nhận là internet/TLS. APPROACH: không làm cloud | LAN/VPN thật NOT_RUN |
-| T23 | ConPTY lifecycle | IMPLEMENTED_NOT_VERIFIED | 20 cycle exit 0. `useConptyDll` bỏ helper AttachConsole. Workbench lần này: một lần chết `0xC0000005` sau "no renderer errors", lần sau exit 0 với 4 shell còn alive trước `exit` | Không phải soak. Timeout/AV lúc thoát shell chưa có root cause |
+| T23 | ConPTY lifecycle | IMPLEMENTED_NOT_VERIFIED | `146576b`: 4 workbench, 4 mobile, 4 harness `app.exit`, 4 product `app.quit` đều exit 0. 20 cycle, live 0. Không còn `0xC0000005` / `0xC0000409` trong bộ đó | Soak NOT_RUN. Chưa phải mọi cách đóng cửa sổ của người dùng |
 | T24 | Một nguồn build | IMPLEMENTED_NOT_VERIFIED | `scripts/build_app.mjs` stage rồi swap, ghi `BUILD.json` | Chưa chạy `npm run dist` |
 | T25 | Cài đặt có rollback | IMPLEMENTED_NOT_VERIFIED | `install.ps1` stage/swap, từ chối `%APPDATA%` | Chưa cài/nâng cấp/gỡ trong thư mục tạm |
 | T26 | Phát hành | xem mục con | local only | Không FIXED_VERIFIED |
@@ -125,9 +125,9 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 ## 8. Dành cho Codex
 
 - CODEX_REVIEW_STATE: CHANGES_REQUESTED
-- HEAD review mới nhất: `34b7ce321ffd574d03dec7275bcc08bb25696e5c`, ngày 03/11/2026. Các vòng trước giữ trong báo cáo lịch sử.
-- Quyết định vòng 4: R1–R9 PASS ở ca đã chạy, nhưng R10 FAIL: queued save ghi snapshot đã discard xuống đĩa rồi autosave sau mới ghi trả lại external version. Chưa approve push/tạo PR. Workbench smoke còn một lượt timeout shell exit, lượt riêng sau pass.
-- Báo cáo hiện tại và việc sửa tiếp: [codex-review-round4.md](docs/handoffs/stabilization/codex-review-round4.md).
+- HEAD review mới nhất: `521e51c4c061a5c2932dc19a2ba0a2476a460f70`, ngày 03/11/2026. Các vòng trước giữ trong báo cáo lịch sử.
+- Quyết định vòng 5: R1–R10 PASS ở ca chạy lại, nhưng native shutdown C2/T23 chưa ổn định: workbench 2/4 lượt exit 0xC0000005, mobile assertions PASS nhưng process exit 0xC0000409. Chưa approve push/tạo PR.
+- Báo cáo hiện tại và việc sửa tiếp: [codex-review-round5.md](docs/handoffs/stabilization/codex-review-round5.md).
 - Báo cáo reviewer, ma trận T01–T28/subtask và prompt sửa tiếp cho Grok: [codex-review.md](docs/handoffs/stabilization/codex-review.md).
 - `npm run check`, workbench/mobile smoke, 20 lifecycle cycles và JS syntax đều pass. Fixture `scripts/codex_review_regressions.js` exit 1: R1–R6 FAIL; evidence ở `docs/handoffs/stabilization/evidence/codex-review-regressions.json`.
 - Không sửa implementation, không commit/push/PR/merge/release trong lượt review. Chỉ bổ sung hồ sơ review và fixture kiểm chứng. Không có kênh gửi trực tiếp Grok; prompt bàn giao nằm trong báo cáo trên.
@@ -198,3 +198,20 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 - R10 trên commit đó: `docs/handoffs/stabilization/evidence/codex-review-discard-pending-cbc555d-1793707930795.json`. `writesAfterDiscard` rỗng, `writeCount` dừng ở 1, đĩa và editor vẫn là `EXTERNAL VERSION TO PRESERVE`. Evidence FAIL gốc của vòng 4 giữ nguyên.
 - Workbench: lượt gộp chết `0xC0000005` sau khi các check UI đã pass, trước dòng "all checks passed". Lượt riêng sau đó exit 0. Bốn terminal còn `alive:true` ngay trước khi gửi `exit`. Không tăng timeout. Soak vẫn NOT_RUN.
 - Public release: NOT_READY. Chưa push, chưa merge, chưa phát hành.
+
+## 16. Codex review vòng 5
+
+- HEAD `521e51c`: 27 Node checks, R1–R10 và 20 lifecycle cycles PASS. R10 không có write sau Discard (`writesAfterDiscard:[]`, writeCount 1).
+- Native shutdown vẫn lỗi: workbench lượt 1/3 exit 0, lượt 2/4 exit -1073741819 (0xC0000005). Mobile in ALL CHECKS PASSED nhưng process exit -1073740791 (0xC0000409). Không gọi smoke sạch khi exit nonzero.
+- Log/evidence `docs/handoffs/stabilization/evidence/codex-review-workbench-521e51c-*.log`, `codex-review-workbench-521e51c-runs.json`, `codex-review-mobile-521e51c.log`, `codex-review-mobile-521e51c-exit.json`.
+- C2/T23 cần tách product/native/harness, xác định lifecycle ownership và completion, rồi có rerun không lỗi. Chưa xác định root cause hay khẳng định native close của sản phẩm luôn crash.
+- CHANGES_REQUESTED; không sửa implementation/commit/push/PR/merge/release trong review. Giao việc chi tiết qua `docs/handoffs/stabilization/codex-review-round5.md`.
+
+## 17. Sửa sau review vòng 5
+
+- Implementation: `146576beaaa5e165ba43daf469605c2ffb08670a`.
+- Nguyên nhân đã khóa bằng log: `node-pty` DLL `kill()` gọi `ClosePseudoConsole` trên HPCON đã `ConptyReleasePseudoConsole`, rồi `TerminateProcess(hShell)`. Watcher thoát đóng `hShell` và xóa baton trước khi vào JS. Workbench chết sau `pty native exit` và trước `pty socket exit` (`shutdown-wb-trace-2.log`, exit `-1073741819`). Đường quit sống cũng chết cùng mã trước khi worker dừng (`shutdown-control-quit-2.log`).
+- Sửa: không gọi `proc.kill()`. Process còn sống thì `process.kill(pid)`. Callback native exit terminate conout worker ngay, rồi `kill_all` đợi promise đó. `will-quit` đợi `kill_all` rồi mới `app.quit()`. Workbench smoke `await kill_all()` rồi `app.exit`. `alive:false` không được dùng làm bằng chứng native đã xong.
+- Nghiệm thu 4 lượt mỗi suite, không bỏ lượt lỗi, trên đúng nội dung đã commit (log ghi ngay trước `146576b`, không sửa code ở giữa): workbench exit 0/0/0/0 và "all checks passed"; mobile exit 0/0/0/0 và ALL CHECKS PASSED, không có AttachConsole; harness `app.exit` exit 0 và `orphans:[]`; product quit exit 0. Bảng `docs/handoffs/stabilization/evidence/c2-runs.json`.
+- Sau commit, chạy lại: Node check 27 PASS; R1–R6, R7/R8, R9, R10 PASS (R10 `writesAfterDiscard:[]`, writeCount 1); lifecycle 20/20, live 0. Evidence `codex-review-regressions-146576b-1793710520529.json`, `codex-review-editor-146576b-1793710526404.json`, `codex-review-conflicted-quit-146576b-1793710530439.json`, `codex-review-discard-pending-146576b-1793710537268.json`, `c2-rerun-lifecycle.log`.
+- Evidence FAIL/AV của vòng 5 và của các lượt điều tra giữ nguyên. Soak, máy sạch, CLI/provider/điện thoại thật vẫn NOT_RUN. Public release: NOT_READY. Chưa push, chưa merge, chưa phát hành.

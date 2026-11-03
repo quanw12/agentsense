@@ -1,0 +1,25 @@
+{
+  "reviewedHead": "146576beaaa5e165ba43daf469605c2ffb08670a",
+  "createdAt": "2026-11-03T12:55:30.438Z",
+  "fixtureRoot": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-review-conflict-gAQWfC",
+  "results": [
+    {
+      "id": "SETUP",
+      "passed": true,
+      "actual": {
+        "status": "conflict",
+        "buffer": "UNSAVED BUFFER TO KEEP",
+        "disk": "EXTERNAL DISK VERSION"
+      }
+    },
+    {
+      "id": "R9",
+      "passed": true,
+      "actual": {
+        "windowClosed": false,
+        "buffer": "UNSAVED BUFFER TO KEEP",
+        "disk": "EXTERNAL DISK VERSION"
+      }
+    }
+  ]
+}
