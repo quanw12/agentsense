@@ -1,12 +1,16 @@
-// Builds app/ from a verified dist/win-unpacked. A stale app/ is replaced only after the
-// new payload has AgentSense.exe and a manifest. Nothing is uploaded.
+// Rebuilds from source, verifies the payload, then stages and swaps app/.
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
-const root = process.cwd();
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// A single command always rebuilds. An existing exe is not evidence of freshness.
+execFileSync(process.execPath, [path.join(root, 'node_modules/electron-builder/cli.js'), '--win', '--dir'], {
+  cwd: root, stdio: 'inherit', windowsHide: true,
+});
 const unpacked = path.join(root, 'dist', 'win-unpacked');
 const exe = path.join(unpacked, 'AgentSense.exe');
 if (!existsSync(exe)) {
@@ -16,8 +20,10 @@ if (!existsSync(exe)) {
 
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
 let commit = 'unknown';
+let source_dirty = true;
 try {
   commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  source_dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: root, encoding: 'utf8' }).trim() !== '';
 } catch (error) {
   commit = 'unknown';
 }
@@ -26,9 +32,50 @@ function sha256(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
 
+function source_paths(dir) {
+  return readdirSync(path.join(root, dir), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap((entry) => {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isSymbolicLink()) throw new Error(`Source links must be resolved before packaging: ${rel}`);
+    return entry.isDirectory() ? source_paths(rel) : [rel];
+  });
+}
+function native_runtime_paths(dir) {
+  // Debug/linker artifacts are intentionally omitted by electron-builder.
+  return source_paths(dir).filter(rel => /\.(node|dll|exe)$/i.test(rel));
+}
+
+const source_hashes = {};
+for (const rel of ['main.js', 'preload.js', 'build/icon.png', ...source_paths('src'),
+  ...source_paths('node_modules/node-pty/lib'), ...native_runtime_paths('node_modules/node-pty/prebuilds/win32-x64'),
+  ...(existsSync(path.join(root, 'node_modules/node-pty/build/Release')) ? native_runtime_paths('node_modules/node-pty/build/Release') : [])]) {
+  const source_hash = sha256(path.join(root, rel));
+  if (sha256(path.join(unpacked, 'resources/app', rel)) !== source_hash) {
+    throw new Error(`Packaged file differs from source: ${rel}`);
+  }
+  source_hashes[rel] = source_hash;
+}
+const packed_pkg = JSON.parse(readFileSync(path.join(unpacked, 'resources/app/package.json'), 'utf8'));
+if (packed_pkg.version !== pkg.version || packed_pkg.main !== pkg.main) throw new Error('Packaged application metadata differs from source');
+const dependencies = {};
+for (const dependency of Object.keys(pkg.dependencies)) {
+  const installed = JSON.parse(readFileSync(path.join(root, 'node_modules', dependency, 'package.json'), 'utf8')).version;
+  const packed = JSON.parse(readFileSync(path.join(unpacked, 'resources/app/node_modules', dependency, 'package.json'), 'utf8')).version;
+  if (installed !== packed) throw new Error(`Packaged dependency differs from tested installation: ${dependency}`);
+  dependencies[dependency] = packed;
+}
+// electron-builder normalizes dependency package.json (removes dev metadata).
+// Verify its version above, then record the checksum of the installed metadata.
+source_hashes['node_modules/node-pty/package.json'] = sha256(path.join(unpacked, 'resources/app/node_modules/node-pty/package.json'));
+
+function assert_owned_dir(candidate) {
+  const relative = path.relative(root, path.resolve(candidate));
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`Unsafe build target: ${candidate}`);
+}
+
 const stage = path.join(root, 'app.staging');
 const target = path.join(root, 'app');
 const previous = path.join(root, 'app.previous');
+for (const dir of [stage, target, previous]) assert_owned_dir(dir);
 if (existsSync(stage)) rmSync(stage, { recursive: true, force: true });
 cpSync(unpacked, stage, { recursive: true });
 if (!existsSync(path.join(stage, 'AgentSense.exe'))) {
@@ -41,6 +88,9 @@ const manifest = {
   name: pkg.name,
   version: pkg.version,
   commit,
+  source_dirty,
+  source_hashes,
+  dependencies,
   built_at: new Date().toISOString(),
   platform: 'win32-x64',
   signing: 'unsigned',

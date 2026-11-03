@@ -1,0 +1,8 @@
+{
+  "sentinel_preserved": true,
+  "corrupt_upgrade_preserved": true,
+  "reinstall": true,
+  "uninstall": true,
+  "install": true,
+  "fixture": "C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-install-01b81364536d4959b2ad1f29b32a04b7"
+}

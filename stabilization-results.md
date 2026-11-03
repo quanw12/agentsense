@@ -1,13 +1,13 @@
 # AgentSense — kết quả thực hiện và bàn giao review
 
-Người thực hiện: Grok 4.7. Người review: Codex. Không push, không merge, không phát hành.
+Người thực hiện: Grok 4.7 và Codex. Lịch sử review và quyết định remote mới nhất ở mục 8; các mục cũ giữ nguyên bằng chứng tại thời điểm thực hiện.
 
 ## 1. Metadata
 
 - HANDOFF_STATE: READY_FOR_CODEX_REVIEW
 - IMPLEMENTATION_STATUS: PARTIAL
 - PUBLIC_RELEASE_READINESS: NOT_READY
-- CODEX_REVIEW_STATE: CHANGES_REQUESTED
+- CODEX_REVIEW_STATE: VERIFIED_FOR_PR
 - Ngày: 2026-11-03
 - Repo root: `C:\StudyBase\AgentSense`
 - OS / CPU: Windows 10.0.26300, x64. Node v24.11.1, npm 11.6.3, Electron 44.9.0
@@ -120,17 +120,16 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 - Review: `git diff 94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa...HEAD`
 - Chạy lại: `npm run check`, rồi Electron `scripts/smoke_workbench.js`, `scripts/smoke_mobile.js`, `scripts/lifecycle_cycles.js`. Đặt `AGENT_HUB_USER_DATA` nếu tự mở app.
 - Public release: NOT_READY. Thiếu chữ ký, máy sạch, soak, CLI thật, auto-update.
-- Local review: sẵn sàng đọc code và bằng chứng. Không phải APPROVED_FOR_PUSH.
+- Trạng thái review/remote mới nhất xem mục 8 và `docs/handoffs/stabilization/codex-final.md`.
 
 ## 8. Dành cho Codex
 
-- CODEX_REVIEW_STATE: CHANGES_REQUESTED
-- HEAD review mới nhất: `521e51c4c061a5c2932dc19a2ba0a2476a460f70`, ngày 03/11/2026. Các vòng trước giữ trong báo cáo lịch sử.
-- Quyết định vòng 5: R1–R10 PASS ở ca chạy lại, nhưng native shutdown C2/T23 chưa ổn định: workbench 2/4 lượt exit 0xC0000005, mobile assertions PASS nhưng process exit 0xC0000409. Chưa approve push/tạo PR.
-- Báo cáo hiện tại và việc sửa tiếp: [codex-review-round5.md](docs/handoffs/stabilization/codex-review-round5.md).
+- CODEX_REVIEW_STATE: VERIFIED_FOR_PR
+- Commit runtime cuối: `332b6ed968cc9e2e91adb021ad035fba3dafede5`, ngày 03/11/2026. Commit hồ sơ/build theo sau không đổi runtime.
+- Người dùng đã yêu cầu Codex tự sửa lỗi còn lại rồi commit/push, đồng thời giữ quyền tạo PR từ yêu cầu ban đầu. Quyết định: push branch và mở PR với giới hạn kiểm chứng công bố rõ; không merge hoặc phát hành.
+- Báo cáo hiện tại: [codex-final.md](docs/handoffs/stabilization/codex-final.md). R1–R10, 12/12 native runs, concurrent exit/close, CLI resume mock, editor-format UI và sandbox installer đã pass. Nâng/pin upstream node-pty chứa mutex fix; full T01–T28 vẫn có PARTIAL/NOT_RUN, public release NOT_READY.
 - Báo cáo reviewer, ma trận T01–T28/subtask và prompt sửa tiếp cho Grok: [codex-review.md](docs/handoffs/stabilization/codex-review.md).
-- `npm run check`, workbench/mobile smoke, 20 lifecycle cycles và JS syntax đều pass. Fixture `scripts/codex_review_regressions.js` exit 1: R1–R6 FAIL; evidence ở `docs/handoffs/stabilization/evidence/codex-review-regressions.json`.
-- Không sửa implementation, không commit/push/PR/merge/release trong lượt review. Chỉ bổ sung hồ sơ review và fixture kiểm chứng. Không có kênh gửi trực tiếp Grok; prompt bàn giao nằm trong báo cáo trên.
+- Evidence FAIL đầu tiên `codex-review-regressions.json` và các vòng trước được giữ nguyên lịch sử. Evidence xác nhận native cuối ở `docs/handoffs/stabilization/evidence/final-release-check/results.json`.
 
 ## 9. Sửa sau review
 
@@ -215,3 +214,11 @@ Chưa đóng gói. Không có exe mới, không upload. Khi build, `scripts/buil
 - Nghiệm thu 4 lượt mỗi suite, không bỏ lượt lỗi, trên đúng nội dung đã commit (log ghi ngay trước `146576b`, không sửa code ở giữa): workbench exit 0/0/0/0 và "all checks passed"; mobile exit 0/0/0/0 và ALL CHECKS PASSED, không có AttachConsole; harness `app.exit` exit 0 và `orphans:[]`; product quit exit 0. Bảng `docs/handoffs/stabilization/evidence/c2-runs.json`.
 - Sau commit, chạy lại: Node check 27 PASS; R1–R6, R7/R8, R9, R10 PASS (R10 `writesAfterDiscard:[]`, writeCount 1); lifecycle 20/20, live 0. Evidence `codex-review-regressions-146576b-1793710520529.json`, `codex-review-editor-146576b-1793710526404.json`, `codex-review-conflicted-quit-146576b-1793710530439.json`, `codex-review-discard-pending-146576b-1793710537268.json`, `c2-rerun-lifecycle.log`.
 - Evidence FAIL/AV của vòng 5 và của các lượt điều tra giữ nguyên. Soak, máy sạch, CLI/provider/điện thoại thật vẫn NOT_RUN. Public release: NOT_READY. Chưa push, chưa merge, chưa phát hành.
+
+## 18. Codex sửa cuối theo yêu cầu commit/push
+
+- Runtime `332b6ed`: pin node-pty 1.2.0-beta.17 có mutex fix upstream; chặn launch khi shutdown, đợi accepted launch/native close, chia sẻ concurrent close promise; fallback saved Claude session ID. Editor giữ BOM/CRLF và chỉ đọc encoding/line ending chưa hỗ trợ.
+- 27 checks, R1–R10, 20 lifecycle cycles, PTY/output/concurrent exit/child cleanup/admission, actual editor-format UI đều pass. Native suites cuối 12/12 exit 0, không orphan; production main.js quit được kiểm chứng trực tiếp.
+- Build từ source + xác minh source/native hashes và dependency versions trước stage/swap. Installer checksum validation trước thay bản cũ. Sandbox install/reinstall/corrupt upgrade/uninstall pass; failed upgrade giữ exe cũ và sentinel không đổi.
+- CI pull_request kiểm regression/native/build/install với quyền tối thiểu; remote CI chưa được tính PASS trước khi PR thực sự chạy.
+- Chi tiết, evidence, failure lịch sử và giới hạn ở `docs/handoffs/stabilization/codex-final.md`. VERIFIED_FOR_PR theo scope đã chạy; public release vẫn NOT_READY, không tự đổi các requirement PARTIAL thành hoàn tất.

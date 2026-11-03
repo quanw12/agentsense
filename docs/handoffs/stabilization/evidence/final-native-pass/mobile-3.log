@@ -1,0 +1,23 @@
+
+PASS static: wrong token is 404
+PASS static: path without token is 404
+PASS static: index page served
+PASS static: xterm.js served
+PASS static: agents.js served
+PASS static: agent logo served
+PASS static: traversal blocked
+PASS ws: wrong token rejected
+PASS ws: snapshot on connect
+PASS ws: desktop pane listed
+PASS ws: attach replies with buffer
+PASS ws: input reaches the pty and output comes back
+PASS ws: agents_check works
+PASS ws: no error messages so far
+PASS ws: phone-created pane arrives as created
+PASS ws: terminal_created event emitted for the desktop
+PASS ws: unknown workspace refused
+PASS ws: kill replies killed + closed
+PASS ws: killed session is gone from pty_manager
+PASS lockout: correct token is locked out after 3 wrong ones
+
+ALL CHECKS PASSED

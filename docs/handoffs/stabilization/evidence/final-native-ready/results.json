@@ -1,0 +1,66 @@
+{
+  "createdAt": "2026-11-03T14:40:52.350Z",
+  "node": "v26.13.0",
+  "electron": "44.9.0",
+  "sourceHashes": {
+    "main.js": "93c7eec8da4087b8f5c99f831b5bbd2303cb4205cbbe86fa93e462b47e52830d",
+    "src/main/pty_manager.js": "911ef32c9a95d4da8d211634b7e622582373694f61518e80b995193643c3736c",
+    "package.json": "af6d6dc4d3f09b2d467291a4383611080a0afbd94ca122ce1002accfdc123261"
+  },
+  "results": [
+    {
+      "suite": "workbench",
+      "iteration": 1,
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "passed": false,
+      "logFile": "workbench-1.log"
+    },
+    {
+      "suite": "workbench",
+      "iteration": 2,
+      "code": 1,
+      "signal": null,
+      "timedOut": false,
+      "passed": false,
+      "logFile": "workbench-2.log"
+    },
+    {
+      "suite": "mobile",
+      "iteration": 1,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "mobile-1.log"
+    },
+    {
+      "suite": "mobile",
+      "iteration": 2,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "mobile-2.log"
+    },
+    {
+      "suite": "product-quit",
+      "iteration": 1,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "product-quit-1.log"
+    },
+    {
+      "suite": "product-quit",
+      "iteration": 2,
+      "code": 0,
+      "signal": null,
+      "timedOut": false,
+      "passed": true,
+      "logFile": "product-quit-2.log"
+    }
+  ]
+}

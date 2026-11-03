@@ -2,6 +2,7 @@ name: windows-check
 
 on:
   workflow_dispatch:
+  pull_request:
 
 permissions:
   contents: read
@@ -9,12 +10,23 @@ permissions:
 jobs:
   check:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - run: npm ci
       - run: npm run check
+      - run: npm run check:pty
+      - run: npx electron scripts/check_app_shutdown.js
+      - run: npx electron scripts/check_editor_format.js
+      - run: npx electron scripts/codex_review_regressions.js
+      - run: npx electron scripts/codex_review_editor_lifecycle.js
+      - run: npx electron scripts/codex_review_conflicted_quit.js
+      - run: npx electron scripts/codex_review_discard_pending.js
       - run: npm run smoke:workbench
       - run: npm run smoke:mobile
+      - run: npm run check:stability
+      - run: npm run build:app
+      - run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/check_install.ps1

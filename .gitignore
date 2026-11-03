@@ -1,11 +1,11 @@
 # Dependencies: recreate with "npm install"
 node_modules/
 
-# Build output: recreate with "npm run dist" + "npm run build:app"
+# Build output: recreate with "npm run build:app"
 dist/
 # app/ is the packaged Electron payload the installer zip ships
 # (Install AgentSense.cmd copies it to %LOCALAPPDATA%\Programs\AgentSense).
-# Regenerate it from source any time: npm run dist && npm run build:app
+# Regenerate it from source any time: npm run build:app
 app/
 
 *.zip

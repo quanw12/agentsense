@@ -90,7 +90,7 @@ npm run start        :: run in dev
 npm run smoke:workbench :: real Electron/terminal checks for tabs, explorer, drops and worktrees
 npm run icons        :: repack build/icon.png + build/icon.ico from assets/icon.png (optional)
 npm run dist         :: build dist/win-unpacked with electron-builder
-npm run build:app    :: mirror dist/win-unpacked into app/ (the installer payload)
+npm run build:app    :: rebuild, verify hashes, and stage app/ for the installer
 ```
 
 Then double-click `Install AgentSense.cmd` (or run `dist\win-unpacked\AgentSense.exe` directly).
@@ -193,7 +193,7 @@ báo thì *More info → Run anyway* (app chưa ký số). Gỡ: `Uninstall
 AgentSense.cmd` (dữ liệu được giữ lại). Chi tiết từng bước xem [README.txt](README.txt).
 
 **Build từ nguồn:** cần Node.js ≥ 20 — `npm install` → `npm run start` (chạy thử)
-→ `npm run dist` (đóng gói) → `npm run build:app` (tạo thư mục `app/` cho zip) →
+→ `npm run build:app` (đóng gói mới, kiểm hash và tạo `app/` cho zip) →
 nhấp đúp `Install AgentSense.cmd`.
 
 ## License

@@ -1,0 +1,32 @@
+
+PASS 14 built-in CLI entries include Gemini, Copilot, Pi and Hermes
+PASS two real PowerShell terminals start through the launch page
+PASS file explorer is on the right
+PASS hidden files are visible
+PASS opening a file creates one reusable tab
+PASS file contents render as text
+PASS tab view control is gone
+PASS focus and double-click keep every pane visible
+PASS focus does not move pane bounds by more than 1px
+PASS Ctrl+Tab selects another agent without hiding panes
+PASS hiding explorer refits terminals and exposes toggle state
+PASS explorer shortcut and keyboard resizing persist
+FAIL tree drag targets only the receiving agent and never submits
+PASS open file tabs can be dragged to a different agent
+PASS workbench shortcut keystrokes do not leak into the shell
+PASS isolated agent runs in its worktree
+PASS drop references the worktree file and does not overwrite it
+PASS external files land in the receiving worktree import folder
+PASS image previews load
+PASS panel visibility and width survive reload
+PASS sessions reattach without respawning
+PASS another workspace keeps its own files panel
+PASS custom CLI launches with the standard session lifecycle
+PASS no renderer errors
+shells before exit: [{"terminal_id":"a06157bb-df98-44fd-ac9b-a3a02b6712f5","pid":29076,"alive":true,"exit_code":null,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-files-hLTYVI"},{"terminal_id":"6883f42b-d5fa-4cc5-be28-9d548675e051","pid":10892,"alive":true,"exit_code":null,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-files-hLTYVI"},{"terminal_id":"883ecac9-7055-48b5-8650-c6b029f58193","pid":13360,"alive":true,"exit_code":null,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-files-hLTYVI.worktrees\\cynthia-terminal-terminal"},{"terminal_id":"af61f710-127d-44c3-a272-3582aafe62cc","pid":0,"alive":true,"exit_code":null,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-drop-KLrJH7"}]
+shutdown step: interrupt
+shutdown step: exit-command
+test shells still alive: [{"terminal_id":"a06157bb-df98-44fd-ac9b-a3a02b6712f5","alive":false,"exit_code":0,"pid":29076,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-files-hLTYVI"},{"terminal_id":"6883f42b-d5fa-4cc5-be28-9d548675e051","alive":false,"exit_code":0,"pid":10892,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-files-hLTYVI"},{"terminal_id":"883ecac9-7055-48b5-8650-c6b029f58193","alive":true,"exit_code":null,"pid":13360,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-files-hLTYVI.worktrees\\cynthia-terminal-terminal"},{"terminal_id":"af61f710-127d-44c3-a272-3582aafe62cc","alive":false,"exit_code":0,"pid":3232,"command":"powershell.exe","cwd":"C:\\Users\\DELL\\AppData\\Local\\Temp\\agentsense-workbench-drop-KLrJH7"}]
+Error: Timed out: test shells exit
+    at until (C:\StudyBase\AgentSense\scripts\smoke_workbench.js:30:45)
+    at async run (C:\StudyBase\AgentSense\scripts\smoke_workbench.js:212:5)
