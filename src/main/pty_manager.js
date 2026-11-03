@@ -122,6 +122,7 @@ function to_info(session) {
     base_cwd: session.base_cwd,
     alive: session.alive,
     exit_code: session.exit_code,
+    pid: session.pid,
     buffer: session.buffer,
     record_id: session.record_id,
     worktree: session.worktree,
@@ -245,6 +246,7 @@ async function create_terminal(opts) {
       spawn_options.useConptyDll = true;
     }
     proc = pty.spawn(spawn_spec.file, spawn_spec.args, spawn_options);
+    watch_native_exit(proc);
   } catch (error) {
     if (hooks_file) claude_hooks.delete_hooks_file(hooks_dir(), terminal_id);
     if (created_worktree) {
@@ -282,6 +284,7 @@ async function create_terminal(opts) {
     cwd,
     base_cwd,
     pty: proc,
+    pid: proc.pid,
     alive: true,
     exit_code: null,
     buffer: '',
@@ -318,10 +321,12 @@ async function create_terminal(opts) {
 
   proc.onExit(({ exitCode }) => {
     // A killed session is already removed; its exit is not reported.
+    // Keep the pty object here. This callback runs on the ConPTY completion path, and
+    // dropping the last reference from it can free the native handles before that path returns.
     if (!sessions.has(terminal_id)) return;
     session.alive = false;
     session.exit_code = exitCode;
-    session.pty = null;
+    console.log(`pty socket exit id=${terminal_id} code=${exitCode}`);
     note_life('exit', terminal_id);
     // Keep the saved record, including worktree identity, so Restart can resolve it.
     // An explicit close is what removes the record.
@@ -381,20 +386,131 @@ function resize_terminal(terminal_id, cols, rows, source) {
 // { worktree_removed, worktree_path, worktree_kept_reason }. The kill itself happens synchronously, so
 // kill_all does not have to wait for the worktree step.
 // The UI removes the pane itself, so no exit event is emitted for an explicit close.
+const releases = new Set();
+
+function track_release(promise) {
+  const done = Promise.resolve(promise).finally(() => releases.delete(done));
+  releases.add(done);
+  return done;
+}
+
+function pid_exists(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error && error.code === 'EPERM';
+  }
+}
+
+// The DLL ConPTY path releases the pseudoconsole to the OS at spawn. node-pty's
+// kill() still calls ClosePseudoConsole on that handle and TerminateProcess on
+// hShell. The exit watcher closes hShell and deletes the baton before it enters
+// JS, so a later kill is a use-after-free (0xC0000005 / 0xC0000409). Stop the
+// shell by pid instead, then wait until that watcher has finished.
+function watch_native_exit(proc) {
+  const agent = proc && proc._agent;
+  if (!agent || agent.__agentsense_exit_promise || typeof agent._$onProcessExit !== 'function') return;
+  agent.__agentsense_exit_promise = new Promise((resolve) => {
+    const original = agent._$onProcessExit.bind(agent);
+    agent._$onProcessExit = function (exitCode) {
+      agent.__agentsense_native_exit = true;
+      console.log(`pty native exit pid=${proc.pid} code=${exitCode}`);
+      const connection = agent._conoutSocketWorker;
+      const worker = connection && connection._worker;
+      // The DLL exit path never stops the conout worker. After the client
+      // process is gone the OS closes the released pseudoconsole, and a worker
+      // still blocked in ReadFile faults the host. Stop it before returning.
+      if (worker && typeof worker.terminate === 'function' && !agent.__agentsense_worker_done) {
+        try {
+          if (connection._drainTimeout) clearTimeout(connection._drainTimeout);
+        } catch (error) {
+          log_error('pty drain clear failed', error);
+        }
+        agent.__agentsense_worker_done = worker.terminate().catch((error) => {
+          log_error('conout worker terminate failed', error);
+          return null;
+        });
+      }
+      try {
+        return original(exitCode);
+      } finally {
+        resolve(exitCode);
+      }
+    };
+  });
+}
+
+function drain_worker(connection, worker) {
+  if (!worker || typeof worker.terminate !== 'function') return Promise.resolve();
+  if (!connection || typeof connection.dispose !== 'function' || typeof connection._destroySocket !== 'function') {
+    return worker.terminate();
+  }
+  return new Promise((resolve) => {
+    const finish = () => resolve();
+    const original = connection._destroySocket.bind(connection);
+    connection._destroySocket = function () {
+      return Promise.resolve().then(() => original()).then(finish, finish);
+    };
+    try {
+      connection.dispose();
+    } catch (error) {
+      log_error('conout dispose failed', error);
+      worker.terminate().then(finish, finish);
+    }
+  });
+}
+
+function release_pty(proc) {
+  if (!proc || proc.__agentsense_released) return Promise.resolve();
+  proc.__agentsense_released = true;
+  const agent = proc._agent;
+  const connection = agent && agent._conoutSocketWorker;
+  const worker = connection && connection._worker;
+  const native_exit = (agent && agent.__agentsense_exit_promise) || Promise.resolve();
+  if (agent && !agent.__agentsense_native_exit && pid_exists(proc.pid)) {
+    try {
+      process.kill(proc.pid);
+    } catch (error) {
+      log_error('pty process kill failed', error);
+    }
+  }
+  console.log(`pty release start pid=${proc.pid} native=${!!(agent && agent.__agentsense_native_exit)}`);
+  note_life('release', `${proc.pid}:${agent && agent.__agentsense_native_exit ? 'exited' : 'signaled'}`);
+  return native_exit.then(() => {
+    console.log(`pty release watcher done pid=${proc.pid}`);
+    if (agent && agent.__agentsense_worker_done) return agent.__agentsense_worker_done;
+    return drain_worker(connection, worker);
+  }).then(() => {
+    console.log(`pty release worker done pid=${proc.pid}`);
+    try {
+      if (agent && agent._inSocket) agent._inSocket.destroy();
+      if (agent && agent._outSocket) {
+        agent._outSocket.removeAllListeners('data');
+        agent._outSocket.destroy();
+      }
+    } catch (error) {
+      log_error('pty socket cleanup failed', error);
+    }
+  }).catch((error) => {
+    log_error('conout worker terminate failed', error);
+    return null;
+  });
+}
+
 function close_terminal(terminal_id, options) {
   const opts = options || {};
   const session = sessions.get(terminal_id);
   if (!session) return Promise.resolve(empty_kill_result());
+  if (session.closing) return session.closing;
   note_life('close-start', terminal_id);
   sessions.delete(terminal_id);
-  if (session.alive) {
-    try {
-      session.pty.kill();
-    } catch (error) {
-      log_error(`kill failed for ${terminal_id}`, error);
-    }
-  }
+  const proc = session.pty;
+  session.pty = null;
   session.alive = false;
+  const released = track_release(release_pty(proc));
+  session.closing = released;
   get_hook_server().unregister_terminal(terminal_id);
   if (session.hooks_file) claude_hooks.delete_hooks_file(hooks_dir(), terminal_id);
   if (!opts.keep_record) {
@@ -404,15 +520,15 @@ function close_terminal(terminal_id, options) {
       log_error('could not remove the session record', error);
     }
   }
-  if (!session.worktree) return Promise.resolve(empty_kill_result());
+  if (!session.worktree) return released.then(() => empty_kill_result());
   if (opts.keep_worktree) {
-    return Promise.resolve({
+    return released.then(() => ({
       worktree_removed: false,
       worktree_path: session.worktree.path,
       worktree_kept_reason: 'kept: the app is quitting',
-    });
+    }));
   }
-  return worktree.remove_if_clean(session.worktree).then(
+  return released.then(() => worktree.remove_if_clean(session.worktree)).then(
     (outcome) => ({
       worktree_removed: outcome.removed,
       worktree_path: session.worktree.path,
@@ -458,7 +574,7 @@ async function kill_workspace_terminals(workspace_id) {
 
 // App quit: every process is stopped, but saved records stay, so the panes come back on the next start.
 function kill_all() {
-  const pending = [];
+  const pending = Array.from(releases);
   for (const terminal_id of Array.from(sessions.keys())) {
     pending.push(close_terminal(terminal_id, { keep_record: true, keep_worktree: true }).catch(() => null));
   }

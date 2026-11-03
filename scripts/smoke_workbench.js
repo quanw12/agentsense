@@ -190,14 +190,17 @@ async function run(window) {
   // Exit the test shells before closing their ConPTY handles, so node-pty's process-list helper can detach.
   const shells_before_exit = pty.list_terminals().map((t) => ({
     terminal_id: t.terminal_id,
+    pid: t.pid,
     alive: t.alive,
     exit_code: t.exit_code,
     command: t.command,
     cwd: t.cwd,
   }));
   console.log(`shells before exit: ${JSON.stringify(shells_before_exit)}`);
+  console.log('shutdown step: interrupt');
   await js(`for (const s of await window.hub.terminals.list()) window.hub.terminals.write(s.terminal_id, '\\x03');`);
   await delay(100);
+  console.log('shutdown step: exit-command');
   await js(`for (const s of await window.hub.terminals.list()) window.hub.terminals.write(s.terminal_id, 'exit\\r');`);
   try {
     await until(() => pty.list_terminals().every((t) => !t.alive), 'test shells exit');
@@ -206,13 +209,16 @@ async function run(window) {
       terminal_id: t.terminal_id,
       alive: t.alive,
       exit_code: t.exit_code,
+      pid: t.pid,
       command: t.command,
       cwd: t.cwd,
     }));
     console.error(`test shells still alive: ${JSON.stringify(stuck)}`);
     throw error;
   }
+  console.log('shutdown step: shells-dead');
   await js('for (const s of await window.hub.terminals.list()) await window.hub.terminals.kill(s.terminal_id)');
+  console.log('shutdown step: killed');
   // The worktree contains dropped files, so normal close must preserve it.
   check('closing an agent preserves its modified worktree', fs.existsSync(staged_external));
   console.log(`\nWorkbench smoke: ${failures ? `${failures} failed` : 'all checks passed'}`);
@@ -220,8 +226,8 @@ async function run(window) {
 
 app.on('browser-window-created', (_event, window) => {
   window.webContents.once('did-finish-load', () => {
-    run(window).catch((error) => { failures++; console.error(error); }).finally(() => {
-      require('../src/main/pty_manager').kill_all();
+    run(window).catch((error) => { failures++; console.error(error); }).finally(async () => {
+      await require('../src/main/pty_manager').kill_all();
       app.exit(failures ? 1 : 0);
     });
   });

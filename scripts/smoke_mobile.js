@@ -218,6 +218,6 @@ async function main() {
 
 main().catch(async (error) => {
   console.error('SMOKE FAILED:', error);
-  pty_manager.kill_all();
+  await pty_manager.kill_all();
   process.exit(1);
 });

@@ -206,9 +206,19 @@ if (!got_lock) {
     });
   });
 
-  app.on('will-quit', () => {
-    get_mobile_server().stop();
-    pty_manager.kill_all();
+  let quit_state = 'open';
+  app.on('will-quit', (event) => {
+    if (quit_state === 'done') return;
+    event.preventDefault();
+    if (quit_state === 'draining') return;
+    quit_state = 'draining';
+    Promise.resolve(pty_manager.kill_all()).catch((error) => {
+      console.error(`terminal shutdown failed: ${error && error.message ? error.message : error}`);
+    }).finally(() => {
+      try { get_mobile_server().stop(); } catch (error) { console.error(error); }
+      quit_state = 'done';
+      app.quit();
+    });
   });
 
   app.on('window-all-closed', () => {
