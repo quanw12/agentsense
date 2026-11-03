@@ -71,6 +71,20 @@ function assert_owned_dir(candidate) {
   const relative = path.relative(root, path.resolve(candidate));
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`Unsafe build target: ${candidate}`);
 }
+async function rename_owned(from, to) {
+  assert_owned_dir(from);
+  assert_owned_dir(to);
+  // Windows antivirus/indexing can briefly lock a newly copied native payload.
+  // Retry only sharing/permission errors, with a bounded budget; rollback still
+  // runs if the lock belongs to a running application and does not clear.
+  for (let attempt = 0; ; attempt++) {
+    try { renameSync(from, to); return; }
+    catch (error) {
+      if (attempt >= 5 || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) throw error;
+      await new Promise(resolve => setTimeout(resolve, 50 * (2 ** attempt)));
+    }
+  }
+}
 
 const stage = path.join(root, 'app.staging');
 const target = path.join(root, 'app');
@@ -101,11 +115,11 @@ mkdirSync(path.join(root, 'dist'), { recursive: true });
 writeFileSync(path.join(root, 'dist', 'BUILD.json'), JSON.stringify(manifest, null, 2));
 
 if (existsSync(previous)) rmSync(previous, { recursive: true, force: true });
-if (existsSync(target)) renameSync(target, previous);
+if (existsSync(target)) await rename_owned(target, previous);
 try {
-  renameSync(stage, target);
+  await rename_owned(stage, target);
 } catch (error) {
-  if (existsSync(previous) && !existsSync(target)) renameSync(previous, target);
+  if (existsSync(previous) && !existsSync(target)) await rename_owned(previous, target);
   console.error(error.message);
   process.exit(1);
 }
