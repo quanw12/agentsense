@@ -135,6 +135,27 @@ function create_main_window() {
   main_window.removeMenu();
   register_shortcuts(main_window);
 
+  let flush_in_progress = false;
+  main_window.on('close', (event) => {
+    if (main_window.flush_complete) return;
+    event.preventDefault();
+    if (flush_in_progress || main_window.webContents.isDestroyed()) return;
+    flush_in_progress = true;
+    main_window.webContents.executeJavaScript(
+      'window.__grid && window.__grid.flush_editors ? window.__grid.flush_editors() : { ok: true }'
+    ).then((result) => {
+      flush_in_progress = false;
+      if (!main_window || main_window.isDestroyed()) return;
+      if (result && result.ok) {
+        main_window.flush_complete = true;
+        main_window.close();
+      }
+    }).catch((error) => {
+      flush_in_progress = false;
+      console.error(`could not flush editors before close: ${error && error.message ? error.message : error}`);
+    });
+  });
+
   main_window.on('closed', () => {
     main_window = null;
   });

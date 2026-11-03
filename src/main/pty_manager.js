@@ -231,13 +231,20 @@ async function create_terminal(opts) {
     // PATH is read fresh so panes can run agents installed after the app started. env_extra carries the
     // per-seat model/API settings chosen on the launch page.
     const env = env_with_fresh_path(Object.assign({}, process.env, context.env, { TERM: 'xterm-256color' }));
-    proc = pty.spawn(spawn_spec.file, spawn_spec.args, {
+    // useConptyDll avoids node-pty's console-list helper. That helper calls AttachConsole
+    // after the console is already destroyed, so a normal kill printed a native exception.
+    const spawn_options = {
       name: 'xterm-256color',
       cols,
       rows,
       cwd,
       env,
-    });
+    };
+    if (process.platform === 'win32') {
+      spawn_options.useConpty = true;
+      spawn_options.useConptyDll = true;
+    }
+    proc = pty.spawn(spawn_spec.file, spawn_spec.args, spawn_options);
   } catch (error) {
     if (hooks_file) claude_hooks.delete_hooks_file(hooks_dir(), terminal_id);
     if (created_worktree) {
@@ -451,9 +458,11 @@ async function kill_workspace_terminals(workspace_id) {
 
 // App quit: every process is stopped, but saved records stay, so the panes come back on the next start.
 function kill_all() {
+  const pending = [];
   for (const terminal_id of Array.from(sessions.keys())) {
-    close_terminal(terminal_id, { keep_record: true, keep_worktree: true }).catch(() => null);
+    pending.push(close_terminal(terminal_id, { keep_record: true, keep_worktree: true }).catch(() => null));
   }
+  return Promise.all(pending);
 }
 
 // Record ids of panes whose process is running now. Saved records with these ids are not "saved" any more.

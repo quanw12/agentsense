@@ -1205,27 +1205,44 @@
       notify_grid(grid);
       return;
     }
-    close_file_at(grid, pane, pane.active);
+    void close_file_at(grid, pane, pane.active);
   }
 
-  function close_file_at(grid, pane, index) {
+  async function close_file_at(grid, pane, index) {
     const file = pane.files[index];
-    if (file && file.conflict) {
-      show_banner(grid, `${file.name} changed on disk. Your edits are still in the editor and were not overwritten.`);
-      return;
-    }
-    if (file && file.dirty && file.editable !== false) flush_editor(grid, pane, file);
-    pane.files.splice(index, 1);
-    if (pane.files.length === 0) {
-      remove_pane(grid, pane);
+    if (!file || file.closing) return;
+    file.closing = true;
+    try {
+      let attempts = 0;
+      while (file.dirty && file.editable !== false && !file.conflict && attempts < 5) {
+        attempts += 1;
+        const outcome = await flush_editor(grid, pane, file);
+        if (!outcome || outcome.conflict || outcome.error) break;
+      }
+      if (file.dirty || file.conflict) {
+        const message = file.conflict
+          ? `${file.name} changed on disk. Your edits are still in the editor and were not overwritten.`
+          : `Could not save ${file.name}. The tab was kept.`;
+        show_banner(grid, message);
+        render_file_tabs(grid, pane);
+        return;
+      }
+      const current = pane.files.indexOf(file);
+      if (current === -1) return;
+      pane.files.splice(current, 1);
+      if (pane.files.length === 0) {
+        remove_pane(grid, pane);
+        save_view_layout(grid, pane.view);
+        notify_grid(grid);
+        return;
+      }
+      pane.active = Math.max(0, Math.min(pane.active, pane.files.length - 1));
+      render_file_tabs(grid, pane);
+      await activate_file(grid, pane, pane.active, true);
       save_view_layout(grid, pane.view);
-      notify_grid(grid);
-      return;
+    } finally {
+      file.closing = false;
     }
-    pane.active = Math.max(0, Math.min(pane.active, pane.files.length - 1));
-    render_file_tabs(grid, pane);
-    void activate_file(grid, pane, pane.active, true);
-    save_view_layout(grid, pane.view);
   }
 
   async function activate_file(grid, pane, index, reload) {
@@ -1364,8 +1381,15 @@
     if (file.save_timer) window.clearTimeout(file.save_timer);
     file.save_timer = window.setTimeout(() => {
       file.save_timer = 0;
-      void save_editor(grid, pane, file, file.buffer, file.edit_generation || 0);
+      void enqueue_save(grid, pane, file, file.buffer, file.edit_generation || 0);
     }, 600);
+  }
+
+  function enqueue_save(grid, pane, file, snapshot, generation) {
+    const previous = file.save_tail || Promise.resolve();
+    const run = previous.then(() => perform_save(grid, pane, file, snapshot, generation));
+    file.save_tail = run.then(() => null, () => null);
+    return run;
   }
 
   function flush_editor(grid, pane, file) {
@@ -1373,11 +1397,12 @@
       window.clearTimeout(file.save_timer);
       file.save_timer = 0;
     }
-    void save_editor(grid, pane, file, file.buffer, file.edit_generation || 0);
+    return enqueue_save(grid, pane, file, file.buffer, file.edit_generation || 0);
   }
 
-  async function save_editor(grid, pane, file, snapshot, generation) {
-    if (!file || !file.dirty || file.editable === false || pane.disposed) return;
+  async function perform_save(grid, pane, file, snapshot, generation) {
+    if (!file || file.editable === false) return { saved: false, error: true };
+    if (!file.dirty && file.disk === snapshot && !file.conflict) return { saved: true };
     if (file.status_el) file.status_el.textContent = 'saving';
     try {
       const outcome = await window.hub.files.write(file.root, file.path, snapshot, file.mtime, file.loaded_bytes);
@@ -1388,7 +1413,7 @@
         if (file.status_el) file.status_el.textContent = 'conflict';
         show_banner(grid, `${file.name} changed on disk. Your edits are still in the editor and were not overwritten.`);
         render_file_tabs(grid, pane);
-        return;
+        return { saved: false, conflict: true };
       }
       file.mtime = outcome.mtime;
       file.loaded_bytes = outcome.size;
@@ -1398,17 +1423,38 @@
         file.dirty = true;
         if (file.status_el) file.status_el.textContent = 'edited';
         schedule_save(grid, pane, file);
-        return;
+        return { saved: false, pending: true };
       }
       file.dirty = false;
       file.conflict = false;
       file.buffer = snapshot;
       if (file.status_el) file.status_el.textContent = 'saved';
       render_file_tabs(grid, pane);
+      return { saved: true };
     } catch (error) {
+      file.dirty = true;
       if (file.status_el) file.status_el.textContent = 'error';
       show_banner(grid, `Could not save ${file.name}: ${error_text(error)}`);
+      return { saved: false, error: true };
     }
+  }
+
+  async function flush_dirty_editors(grid) {
+    const pending = [];
+    for (const view of grid.views.values()) {
+      for (const pane of view.panes) {
+        if (pane.disposed || pane.kind !== 'file' || !pane.files) continue;
+        for (const file of pane.files) {
+          // A conflict the user already sees must not be written over the external file.
+          // A dirty buffer that has not failed yet is flushed, and a new conflict cancels close.
+          if (file.conflict || !file.dirty || file.editable === false) continue;
+          pending.push(flush_editor(grid, pane, file).then((result) => ({ file, result })));
+        }
+      }
+    }
+    const finished = await Promise.all(pending);
+    const blocked = finished.some(({ file, result }) => !result || !result.saved || file.dirty || file.conflict);
+    return { ok: !blocked };
   }
 
   // One file region per workspace. Further files become tabs in that region.
@@ -2376,6 +2422,7 @@
       list_sessions: (workspace_id) => list_sessions_in_grid(grid, workspace_id),
       focus_session: (terminal_id) => focus_session_in_grid(grid, terminal_id),
       close_session: (terminal_id) => close_session_in_grid(grid, terminal_id),
+      flush_editors: () => flush_dirty_editors(grid),
     };
   }
 

@@ -6,7 +6,27 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { app } = require('electron');
+const child_process = require('child_process');
 const { WebSocket } = require('ws');
+
+// node-pty forks this helper on the non-DLL ConPTY kill path. Its stderr stays inherited.
+// A non-zero exit is a real teardown failure, not an ignored log line.
+const conpty_helpers = [];
+const fork_process = child_process.fork;
+child_process.fork = function fork_observed(module_path, args, options) {
+  const child = fork_process.call(this, module_path, args, options);
+  if (String(module_path).includes('conpty_console_list_agent')) {
+    conpty_helpers.push(new Promise((resolve) => {
+      child.on('exit', (code) => {
+        const failed = code !== 0;
+        console.log(`${failed ? 'FAIL' : 'PASS'} conpty helper exit ${code}`);
+        if (failed) failures += 1;
+        resolve();
+      });
+    }));
+  }
+  return child;
+};
 
 // Keep the smoke test away from the real %APPDATA%\AgentSense state.
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'agentsense-smoke-')));
@@ -190,7 +210,8 @@ async function main() {
   check('lockout: correct token is locked out after 3 wrong ones', locked.status === 404);
   await guard.stop();
 
-  pty_manager.kill_all();
+  await pty_manager.kill_all();
+  await Promise.all(conpty_helpers);
   console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);
 }
