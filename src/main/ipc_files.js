@@ -390,7 +390,14 @@ async function search_files(root_path, query) {
 }
 
 function register_file_ipc() {
-  const { ipcMain } = electron_bits();
+  const { ipcMain, dialog, BrowserWindow } = electron_bits();
+  ipcMain.handle('files:pick', async (event, root_path) => {
+    const root = require_root(root_path);
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    const options = { title: 'Open files in this page', defaultPath: root.path, properties: ['openFile', 'multiSelections'] };
+    const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+    return result.canceled ? [] : result.filePaths;
+  });
   ipcMain.handle('files:list', (_event, root_path, rel) => list_dir(root_path, rel));
   ipcMain.handle('files:read', (_event, root_path, rel) => read_file(root_path, rel));
   ipcMain.handle('files:write', (_event, root_path, rel, content, expected_mtime, loaded_bytes) => write_text(root_path, rel, content, expected_mtime, loaded_bytes));

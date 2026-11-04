@@ -19,8 +19,8 @@ worktree. Everything runs locally, works offline and stays on your machine.
 
 ## Features
 
-- **Agent panes** — a terminal grid (xterm.js + node-pty) that runs up to 6 seats
-  at once, in one window.
+- **Agent panes** — a terminal grid (xterm.js + node-pty) with repeatable splits
+  in one window. Launch up to 6 seats at a time, then add more terminals as needed.
 - **Agent catalog** — Claude Code, Codex, Gemini CLI, GitHub Copilot, Pi, Hermes Agent, Cursor Agent, Droid, OpenCode,
   DeepSeek Harness, Grok Build, Kimi Code, Antigravity CLI and a plain
   PowerShell terminal. Agents that are not installed yet show their install
@@ -30,18 +30,23 @@ worktree. Everything runs locally, works offline and stays on your machine.
   whole squad with one click.
 - **Per-seat models & third-party APIs** — choose the model (or a third-party
   provider with per-session env injection) for every seat.
-- **Right files panel & tabs** — browse files (including dotfiles) on the right;
-  click a file to open a preview alongside the terminals. File and agent tabs
-  switch instantly; choose **Tab view** for one pane or **Split view** for all
-  panes. Drag the explorer divider to resize it. Panel visibility, width and
-  view mode survive restart. Shortcuts: **Ctrl+Shift+E** toggles files,
-  **Ctrl+Tab / Ctrl+Shift+Tab** switch tabs.
+- **Workspace pages & files** — **+ New page** opens another page in the same
+  folder. Each page has its own terminal splits and file previews. The page bar
+  appears when there is more than one page; terminals do not get duplicate tabs.
+  Closing a pane expands the remaining panes to fill its space. Drag pane dividers
+  to resize them, or drag a title bar to rearrange panes. Page layouts and file
+  lists survive restart. **Ctrl+Tab / Ctrl+Shift+Tab** switch pages.
+  **Ctrl+Shift+E** toggles the resizable file explorer on the right.
+  Empty pages offer **Open file** and **Open terminal**, and accept file drops.
+  **Split terminal** adds a PowerShell pane beside or below the selected terminal,
+  in the same folder, with no fixed pane count. Files selected or dropped from
+  outside the workspace are copied into `.agentsense-import` before opening;
+  files already in the workspace open directly.
 - **Drag files to agents** — drag from the tree, an open file tab, or Windows
-  Explorer onto a specific terminal or agent tab. External files are copied
-  into that session's working directory (including isolated worktrees), then
-  their quoted paths are pasted into its prompt without pressing Enter.
-  Existing filenames are preserved with numbered copies. Dropping onto the
-  explorer instead copies into the workspace root.
+  Explorer onto a terminal pane. External files are copied into that session's
+  working directory (including isolated worktrees), then their quoted paths are
+  pasted into its prompt without pressing Enter. Existing filenames are preserved
+  with numbered copies. Dropping onto the explorer copies into the workspace root.
 - **Git worktree isolation** — give a pane its own worktree
   (`<repo>.worktrees/<name>`, branch `agentsense/<name>`); nothing is ever
   force-removed.

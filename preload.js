@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('hub', {
     remove: (provider_id) => ipcRenderer.invoke('providers:remove', provider_id),
   },
   files: {
+    pick: (root_path) => ipcRenderer.invoke('files:pick', root_path),
     list: (root_path, rel) => ipcRenderer.invoke('files:list', root_path, rel),
     read: (root_path, rel) => ipcRenderer.invoke('files:read', root_path, rel),
     render_document: (root_path, rel) => ipcRenderer.invoke('files:render_document', root_path, rel),

@@ -67,7 +67,7 @@ async function run(window) {
   await js(`document.querySelector('.tg-view-active .fp-row[data-path="brief.txt"]').click()`);
   await until(() => js('Boolean(document.querySelector(".tg-view-active .tf-text"))'), 'text preview');
   await js(`document.querySelector('.tg-view-active .fp-row[data-path="brief.txt"]').click()`);
-  check('opening a file creates one reusable tab', await js('document.querySelectorAll(".tg-view-active .tg-file-pane").length === 1 && document.querySelectorAll(".tg-view-active [role=tab]").length === 3'));
+  check('opening a file creates one reusable tab', await js('document.querySelectorAll(".tg-view-active .tg-file-pane").length === 1 && document.querySelector(".tg-view-active .tg-tabs").hidden'));
   check('file contents render as text', await js(`(() => {
     const node = document.querySelector('.tg-view-active .tf-text');
     return ((node && (node.value || node.textContent)) || '').includes('Drag this file');
@@ -78,7 +78,7 @@ async function run(window) {
     return { id: p.id, w: Math.round(r.width), h: Math.round(r.height), hidden: p.hidden };
   }))`);
   for (let i = 0; i < 20; i += 1) {
-    await js(`document.querySelectorAll('.tg-view-active [role=tab]')[${i % 3}].click()`);
+    await js(`document.querySelectorAll('.tg-view-active .tg-pane-titlebar')[${i % 3}].click()`);
   }
   await js(`document.querySelector('.tg-view-active .tg-pane-titlebar').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}));`);
   const bounds_after = await js(`JSON.stringify(Array.from(document.querySelectorAll('.tg-view-active .tg-pane')).map(p => {
@@ -116,7 +116,7 @@ async function run(window) {
   const drag = `(() => {
     const dt = new DataTransfer();
     document.querySelector('.tg-view-active .fp-row[data-path="brief.txt"]').dispatchEvent(new DragEvent('dragstart', {dataTransfer:dt, bubbles:true}));
-    document.querySelectorAll('.tg-view-active .tg-tab')[1].dispatchEvent(new DragEvent('drop', {dataTransfer:dt, bubbles:true, cancelable:true}));
+    document.querySelectorAll('.tg-view-active .tg-pane[data-terminal-id]')[1].dispatchEvent(new DragEvent('drop', {dataTransfer:dt, bubbles:true, cancelable:true}));
   })()`;
   await js(drag);
   await until(() => writes.some((w) => w.id === terminal_ids[1] && w.data.includes('brief.txt')), 'file path reaches second agent');
@@ -127,8 +127,8 @@ async function run(window) {
   writes.length = 0;
   await js(`(() => {
     const dt = new DataTransfer();
-    document.querySelector('.tg-view-active .tg-tab:nth-child(3) [role=tab]').dispatchEvent(new DragEvent('dragstart', {dataTransfer:dt, bubbles:true}));
-    document.querySelector('.tg-view-active .tg-tab:first-child').dispatchEvent(new DragEvent('drop', {dataTransfer:dt, bubbles:true, cancelable:true}));
+    document.querySelector('.tg-view-active .tf-file-tab').dispatchEvent(new DragEvent('dragstart', {dataTransfer:dt, bubbles:true}));
+    document.querySelector('.tg-view-active .tg-pane[data-terminal-id]').dispatchEvent(new DragEvent('drop', {dataTransfer:dt, bubbles:true, cancelable:true}));
   })()`);
   await until(() => writes.some((w) => w.id === terminal_ids[0] && w.data.includes('brief.txt')), 'file tab drop');
   check('open file tabs can be dragged to a different agent', writes.filter(w => w.data.includes('brief.txt')).every(w => w.id === terminal_ids[0]));
@@ -184,6 +184,132 @@ async function run(window) {
     !document.querySelector('[data-action=toggle_mode]') &&
     document.querySelector('.tg-root').style.getPropertyValue('--files-width') === '290px'`));
   check('sessions reattach without respawning', pty.list_terminals().length === 3);
+  await js(`window.testWorkspace = (await window.hub.workspaces.list()).find(w => w.path === ${JSON.stringify(fixture)});`);
+  // Pages contain pane groups. A new page must not disturb the sessions on the first one.
+  await js(`document.querySelector('[data-action=new_page]').click()`);
+  check('new page hides the previous group and shows page navigation', await js(`
+    document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 0 &&
+    !document.querySelector('.tg-view-active .tg-tabs').hidden &&
+    document.querySelectorAll('.tg-view-active [role=tab]').length === 2`));
+  await js(`await window.__grid.launch_seats(testWorkspace, [{agent_id:'terminal', label:'Terminal', command:'powershell.exe'}], {});`);
+  check('terminal on a new page fills the available area', await js(`(() => {
+    const pane = document.querySelector('.tg-view-active .tg-pane:not([hidden])');
+    const area = document.querySelector('.tg-view-active .tg-grid').getBoundingClientRect();
+    const r = pane.getBoundingClientRect();
+    return Math.abs(r.top - area.top - 3) < 1 && Math.abs(r.height - area.height + 6) < 1 && Math.abs(r.width - area.width + 6) < 1;
+  })()`));
+  await js(`document.querySelector('[data-action=toggle_files]').click();
+    document.querySelector('.tg-view-active .fp-row[data-path="brief.txt"]').click();`);
+  await until(() => js(`document.querySelectorAll('.tg-view-active .tg-file-pane').length === 2`), 'file in second page');
+  check('each page has its own files in the same workspace', await js(`document.querySelectorAll('.tg-view-active .tg-file-pane:not([hidden])').length === 1`));
+  await js(`document.querySelectorAll('.tg-view-active [role=tab]')[0].click()`);
+  check('returning to first page restores its panes', await js(`document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 4`));
+  await contents.reload();
+  await until(() => js(`Boolean(window.__grid && document.querySelectorAll('.tg-view-active [role=tab]').length === 2 && document.querySelectorAll('.tg-view-active .tg-pane').length === 6)`), 'page restore');
+  check('page membership survives reload without respawning', pty.list_terminals().length === 4 && await js(`document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 4`));
+  await js(`document.querySelectorAll('.tg-view-active [role=tab]')[1].click();
+    document.querySelectorAll('.tg-view-active .tg-tab-close')[1].click()`);
+  await until(() => js(`document.querySelector('.tg-view-active .tg-tabs').hidden`), 'page closed');
+  check('closing a page ends only its sessions', pty.list_terminals().length === 3);
+  // Drive the real divider with pointer events, then verify that pane bounds still cover the grid.
+  await js(`(() => {
+    const divider = document.querySelector('.tg-view-active .tg-divider');
+    const r = divider.getBoundingClientRect();
+    const row = divider.classList.contains('tg-divider-row');
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    // setPointerCapture requires an active native pointer; the geometry path is otherwise identical.
+    divider.setPointerCapture = () => {};
+    divider.dispatchEvent(new PointerEvent('pointerdown', {button:0, pointerId:1, clientX:x, clientY:y}));
+    divider.dispatchEvent(new PointerEvent('pointermove', {pointerId:1, clientX:x + (row ? 90 : 0), clientY:y + (row ? 0 : 90)}));
+    divider.dispatchEvent(new PointerEvent('pointerup', {pointerId:1}));
+  })()`);
+  check('manual divider resizing keeps every pane inside the panel', await js(`(() => {
+    const area = document.querySelector('.tg-view-active .tg-grid').getBoundingClientRect();
+    return [...document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])')].every(pane => {
+      const r = pane.getBoundingClientRect();
+      return r.left >= area.left && r.top >= area.top && r.right <= area.right + 1 && r.bottom <= area.bottom + 1;
+    });
+  })()`));
+  // Close nested branches and verify the survivors cover the full height, then all available space.
+  await js(`while(document.querySelector('.tg-view-active .tf-file-tab-close')) {
+    document.querySelector('.tg-view-active .tf-file-tab-close').click();
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  await window.__grid.close_session(${JSON.stringify(info.terminal_id)});`);
+  check('two surviving terminals fill the panel without a blank band', await js(`(() => {
+    const panes = [...document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])')];
+    const area = document.querySelector('.tg-view-active .tg-grid').getBoundingClientRect();
+    const rects = panes.map(pane => pane.getBoundingClientRect());
+    const covered = rects.reduce((sum, r) => sum + (r.width + 6) * (r.height + 6), 0);
+    return panes.length === 2 && Math.abs(covered - area.width * area.height) < area.width &&
+      Math.abs(Math.min(...rects.map(r => r.top)) - area.top - 3) < 1 &&
+      Math.abs(Math.max(...rects.map(r => r.bottom)) - area.bottom + 3) < 1;
+  })()`));
+  await js(`await window.__grid.close_session(${JSON.stringify(terminal_ids[1])});`);
+  check('last terminal expands to the full panel', await js(`(() => {
+    const r = document.querySelector('.tg-view-active .tg-pane:not([hidden])').getBoundingClientRect();
+    const area = document.querySelector('.tg-view-active .tg-grid').getBoundingClientRect();
+    return Math.abs(r.width - area.width + 6) < 1 && Math.abs(r.height - area.height + 6) < 1;
+  })()`));
+  // Exercise the page's actual actions, native picker bridge, drop surface and repeatable splits.
+  await js(`document.querySelector('[data-action=new_page]').click()`);
+  if (process.env.AGENTSENSE_EMPTY_SCREENSHOT) fs.writeFileSync(process.env.AGENTSENSE_EMPTY_SCREENSHOT, (await contents.capturePage()).toPNG());
+  check('empty page offers file and terminal actions', await js(`
+    !document.querySelector('.tg-view-active .tg-page-empty').hidden &&
+    document.querySelector('.tg-view-active .tg-page-empty [data-action=open_file]') &&
+    document.querySelector('.tg-view-active .tg-page-empty [data-action=open_terminal]')`));
+  const dialog = require('electron').dialog;
+  const original_picker = dialog.showOpenDialog;
+  let picker_options;
+  try {
+    dialog.showOpenDialog = async (_owner, options) => {
+      picker_options = options;
+      return { canceled: true, filePaths: [] };
+    };
+    await js(`document.querySelector('.tg-view-active .tg-page-empty [data-action=open_file]').click()`);
+    await until(() => Boolean(picker_options), 'native file picker called');
+    check('file picker starts in this workspace and cancellation keeps page empty', picker_options.defaultPath === fixture &&
+      await js(`document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 0`));
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path.join(fixture, 'brief.txt')] });
+    await js(`document.querySelector('.tg-view-active .tg-page-empty [data-action=open_file]').click()`);
+    await until(() => js(`Boolean(document.querySelector('.tg-view-active .tg-file-pane:not([hidden]) .tf-text'))`), 'picker opens file');
+  } finally { dialog.showOpenDialog = original_picker; }
+  check('file-only page does not enable terminal split', await js(`document.querySelector('.tg-view-active [data-action=split_terminal]').disabled`));
+  await js(`(() => {
+    const dt = new DataTransfer();
+    dt.setData('application/x-agentsense-path', JSON.stringify({root_path:${JSON.stringify(fixture)},rel_path:'preview.png'}));
+    document.querySelector('.tg-view-active .tg-grid').dispatchEvent(new DragEvent('drop', {dataTransfer:dt,bubbles:true,cancelable:true}));
+  })()`);
+  await until(() => js(`Boolean(document.querySelector('.tg-view-active .tg-file-pane:not([hidden]) .tf-image')?.naturalWidth)`), 'page opens tree drop');
+  check('dropping a workspace file opens it on the current page', await js(`document.querySelectorAll('.tg-view-active .tg-file-pane:not([hidden]) .tf-file-tab').length === 2`));
+  await js(`(() => {
+    const dt = new DataTransfer(); const file = new File(['attachment'], 'external brief.txt');
+    Object.defineProperty(file, 'path', {value:${JSON.stringify(path.join(outside, 'external brief.txt'))}});
+    dt.items.add(file);
+    document.querySelector('.tg-view-active .tg-grid').dispatchEvent(new DragEvent('drop', {dataTransfer:dt,bubbles:true,cancelable:true}));
+  })()`);
+  await until(() => js(`document.querySelectorAll('.tg-view-active .tg-file-pane:not([hidden]) .tf-file-tab').length === 3`), 'page imports external drop');
+  check('external page drop copies into the workspace and opens the copy', fs.existsSync(path.join(fixture, '.agentsense-import', 'external brief.txt')));
+  await js(`document.querySelector('.tg-view-active .tg-page-actions [data-action=open_terminal]').click()`);
+  await until(() => js(`document.querySelectorAll('.tg-view-active .tg-pane[data-terminal-id]:not([hidden])').length === 1 && Boolean(document.querySelector('.tg-view-active .tg-pane[data-terminal-id]:not([hidden])').dataset.terminalId)`), 'page terminal action');
+  const visible_terminals = () => js(`document.querySelectorAll('.tg-view-active .tg-pane[data-terminal-id]:not([hidden])').length`);
+  for (let index = 0; index < 7; index += 1) {
+    const side = index === 1 ? 'bottom' : 'right';
+    const before = await js(`(() => { const r = document.querySelector('.tg-view-active .tg-pane.tg-active').getBoundingClientRect(); return {left:r.left,top:r.top,width:r.width,height:r.height}; })()`);
+    await js(`document.querySelector('.tg-view-active .tg-split-direction').value = '${side}';
+      document.querySelector('.tg-view-active [data-action=split_terminal]').click()`);
+    await until(async () => await visible_terminals() === index + 2 && await js(`Boolean(document.querySelector('.tg-view-active .tg-pane.tg-active').dataset.terminalId)`), 'terminal split action');
+    if (index < 2) check(side === 'right' ? 'split places a terminal beside the selected one' : 'split places a terminal below the selected one', await js(`(() => {
+      const r = document.querySelector('.tg-view-active .tg-pane.tg-active').getBoundingClientRect();
+      return ${side === 'right' ? `r.left > ${before.left} && Math.abs(r.top - ${before.top}) < 1 && Math.abs(r.height - ${before.height}) < 1` : `r.top > ${before.top} && Math.abs(r.left - ${before.left}) < 1 && Math.abs(r.width - ${before.width}) < 1`};
+    })()`));
+    if (index === 1 && process.env.AGENTSENSE_SPLIT_SCREENSHOT) fs.writeFileSync(process.env.AGENTSENSE_SPLIT_SCREENSHOT, (await contents.capturePage()).toPNG());
+  }
+  check('page splitting supports more than six terminals in the same folder', await visible_terminals() === 8 && pty.list_terminals().filter(t => t.cwd === fixture).length === 9);
+  await js(`document.querySelectorAll('.tg-view-active [role=tab]')[0].click()`);
+  check('repeated splits leave the other page intact', await visible_terminals() === 1);
+  await js(`document.querySelectorAll('.tg-view-active .tg-tab-close')[1].click()`);
+  await until(() => pty.list_terminals().length === 1, 'split page closes');
   // Workspace created after hiding explorer must inherit its hidden state.
   await js(`window.otherWorkspace = await window.hub.workspaces.add(${JSON.stringify(outside)});
     window.__grid.show_workspace(otherWorkspace);`);
@@ -192,7 +318,7 @@ async function run(window) {
   await until(() => js('Boolean(document.querySelector(".launch_custom_form"))'), 'custom CLI form');
   await js(`document.querySelector('.launch_custom_form input').value = 'powershell.exe';
     document.querySelector('.launch_custom_form').requestSubmit();`);
-  await until(() => pty.list_terminals().length === 4, 'custom CLI launches');
+  await until(() => pty.list_terminals().length === 2, 'custom CLI launches');
   check('custom CLI launches with the standard session lifecycle', pty.list_terminals().some((t) => t.workspace_id !== info.workspace_id && t.command === 'powershell.exe'));
   check('no renderer errors', errors.length === 0);
   if (errors.length) console.log(errors.join('\n'));
