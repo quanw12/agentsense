@@ -1,4 +1,4 @@
-﻿// Terminal grid: one view per workspace; sessions are xterm panes tiled in a split layout (no overlap).
+﻿// Terminal grid: each workspace has pages of tiled terminal and file panes.
 // Classic script (no import/export). Exposes window.init_terminal_grid(options).
 // Depends on the globals Terminal (xterm) and FitAddon.FitAddon, on window.hub (preload.js) and on
 // file_panel.js (window.init_file_panel) for the workspace file tree beside the sessions.
@@ -398,11 +398,11 @@
         void open_quick_open(grid);
       } else if (event.key === 'Tab') {
         const view = grid.active_view;
-        if (!view || !view.panes.length) return;
+        if (!view) return;
         event.preventDefault();
         event.stopPropagation();
-        const index = view.panes.indexOf(view.selected);
-        select_tab(grid, view.panes[(index + (event.shiftKey ? -1 : 1) + view.panes.length) % view.panes.length]);
+        const index = view.pages.indexOf(view.active_page);
+        select_page(grid, view, view.pages[(index + (event.shiftKey ? -1 : 1) + view.pages.length) % view.pages.length]);
       }
     }, true);
     LIVE_GRIDS.add(grid);
@@ -431,7 +431,18 @@
         if (info && info.version) version.textContent = `v${info.version}`;
       }).catch(() => {});
     }
-    toolbar.append(new_button, note, version, files_button);
+    const page_button = create_el('button', 'tg-btn', '+ New page');
+    page_button.type = 'button';
+    page_button.dataset.action = 'new_page';
+    page_button.title = 'Open another page in this workspace';
+    page_button.addEventListener('click', () => {
+      const view = grid.active_view;
+      if (!view) return;
+      const page = make_page(view);
+      view.pages.push(page);
+      select_page(grid, view, page);
+    });
+    toolbar.append(new_button, page_button, note, version, files_button);
 
     const banner = create_el('div', 'tg-banner');
     const banner_text = create_el('span', 'tg-banner-text', '');
@@ -458,7 +469,7 @@
 
     root.append(toolbar, banner, notice, views);
     grid.container.appendChild(root);
-    return { root, new_button, files_button, note, version, banner, banner_text, notice, notice_text, views, empty };
+    return { root, new_button, page_button, files_button, note, version, banner, banner_text, notice, notice_text, views, empty };
   }
 
   function show_worktree_notice(grid, worktree_path, reason) {
@@ -481,6 +492,7 @@
 
   function set_toolbar_enabled(grid, enabled) {
     grid.dom.new_button.disabled = !enabled;
+    grid.dom.page_button.disabled = !enabled;
     grid.dom.files_button.disabled = !enabled;
   }
 
@@ -531,10 +543,40 @@
     const pane_area = create_el('div', 'tg-pane-area');
     const tabs = create_el('div', 'tg-tabs');
     tabs.setAttribute('role', 'tablist');
-    tabs.setAttribute('aria-label', 'Agents and open files');
+    tabs.setAttribute('aria-label', 'Workspace pages');
     const pane_grid = create_el('div', 'tg-grid');
-    const hint = create_el('div', 'tg-hint', 'Click + New session to start a session');
-    pane_area.append(pane_grid, hint);
+    const hint = create_el('div', 'tg-page-empty');
+    hint.append(create_el('div', 'tg-page-empty-title', 'Start this page'),
+      create_el('p', 'tg-page-empty-note', 'Open a file or terminal in this folder. Drop files here to open them.'));
+    const empty_actions = create_el('div', 'tg-page-empty-actions');
+    const page_actions = create_el('div', 'tg-page-actions');
+    page_actions.setAttribute('role', 'toolbar');
+    page_actions.setAttribute('aria-label', 'Page actions');
+    const add_action = (host, action, label, run) => {
+      const button = create_el('button', 'tg-btn', label);
+      button.type = 'button';
+      button.dataset.action = action;
+      button.addEventListener('click', run);
+      host.append(button);
+      return button;
+    };
+    for (const host of [empty_actions, page_actions]) {
+      add_action(host, 'open_file', 'Open file', () => void pick_page_files(grid, view));
+      add_action(host, 'open_terminal', 'Open terminal', () => void open_page_terminal(grid, view));
+    }
+    hint.append(empty_actions);
+    const split_direction = create_el('select', 'tg-btn tg-split-direction');
+    split_direction.setAttribute('aria-label', 'Terminal split direction');
+    for (const [value, label] of [['right', 'Side by side'], ['bottom', 'Stacked']]) {
+      const option = create_el('option', '', label);
+      option.value = value;
+      split_direction.append(option);
+    }
+    page_actions.append(split_direction);
+    const split_button = add_action(page_actions, 'split_terminal', 'Split terminal', () =>
+      void open_page_terminal(grid, view, split_direction.value));
+    pane_grid.append(hint);
+    pane_area.append(page_actions, pane_grid);
     pane_area.prepend(tabs);
     const file_resize = create_el('div', 'tg-files-resize');
     file_resize.setAttribute('role', 'separator');
@@ -587,10 +629,12 @@
       tabs,
       selected: null,
       hint,
+      split_button,
       panes: [],
       files_open,
       files_width,
-      layout: null, // split tree, see "tiled layout"
+      pages: [],
+      active_page: null,
       zoomed: null, // kept null; selection never maximizes a pane
       dividers: [],
       drop_indicator: null,
@@ -598,6 +642,14 @@
       ready: false,
       disposed: false,
     };
+    const saved_pages = Array.isArray(prefs.pages) && prefs.pages.length ? prefs.pages : [{ id: 'page-1', name: 'Page 1' }];
+    view.pages = saved_pages.map((page) => ({ id: page.id, name: page.name, layout: null }));
+    view.active_page = view.pages.find((page) => page.id === prefs.active_page) || view.pages[0];
+    Object.defineProperty(view, 'layout', {
+      get: () => view.active_page.layout,
+      set: (layout) => { view.active_page.layout = layout; },
+    });
+    attach_drop_to_page(grid, view);
     mount_file_panel(grid, view);
     return view;
   }
@@ -710,7 +762,10 @@
     const saved_files = workspace_ui(view.workspace.id).file_tabs;
     if (Array.isArray(saved_files)) {
       for (const tab of saved_files) {
-        if (tab && typeof tab.path === 'string' && tab.path !== '') open_file_in_grid(grid, view.workspace, tab.path, tab.root);
+        if (tab && typeof tab.path === 'string' && tab.path !== '') {
+          view.active_page = view.pages.find((page) => page.id === tab.page_id) || view.pages[0];
+          open_file_in_grid(grid, view.workspace, tab.path, tab.root);
+        }
       }
     }
     apply_saved_layout(view);
@@ -720,7 +775,84 @@
     notify_grid(grid);
   }
 
-  // spec = { name, agent_id, agent_label, command, cwd, base_cwd?, worktree? }
+  // File picker and canvas drops open files in the page that initiated the action.
+  async function pick_page_files(grid, view) {
+    const page = view.active_page;
+    try {
+      const paths = await window.hub.files.pick(view.workspace.path);
+      await open_paths_in_page(grid, view, page, paths);
+    } catch (error) { show_banner(grid, error_text(error)); }
+  }
+
+  async function open_paths_in_page(grid, view, page, paths) {
+    if (view.disposed || page.closing || !view.pages.includes(page)) return;
+    const external = [];
+    for (const path of paths) {
+      const rel = relative_under(view.workspace.path, path);
+      if (rel) open_file_in_grid(grid, view.workspace, rel, view.workspace.path, page);
+      else external.push({ path });
+    }
+    if (!external.length) return;
+    const outcome = await window.hub.files.copy_in(view.workspace.path, external);
+    if (view.disposed || page.closing || !view.pages.includes(page)) return;
+    const failures = [];
+    for (const result of outcome.results || []) {
+      if (result.ok) open_file_in_grid(grid, view.workspace, result.rel, view.workspace.path, page);
+      else failures.push(`${result.name}: ${result.message}`);
+    }
+    if (failures.length) show_banner(grid, `Could not open files: ${failures.join('; ')}`);
+  }
+
+  function attach_drop_to_page(grid, view) {
+    const area = view.pane_grid;
+    const accepts = (event) => event.dataTransfer && Array.from(event.dataTransfer.types || [])
+      .some((type) => type === 'Files' || type === INTERNAL_PATH_TYPE);
+    area.addEventListener('dragover', (event) => {
+      if (!accepts(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      area.classList.add('tg-page-drop-target');
+    });
+    area.addEventListener('dragleave', (event) => {
+      if (!area.contains(event.relatedTarget)) area.classList.remove('tg-page-drop-target');
+    });
+    area.addEventListener('drop', (event) => {
+      area.classList.remove('tg-page-drop-target');
+      if (!accepts(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const page = view.active_page;
+      const payload = event.dataTransfer.getData(INTERNAL_PATH_TYPE);
+      const files = Array.from(event.dataTransfer.files || []);
+      void (async () => {
+        try {
+          if (payload) {
+            const source = JSON.parse(payload);
+            if (typeof source.root_path !== 'string' || typeof source.rel_path !== 'string') return;
+            open_file_in_grid(grid, view.workspace, source.rel_path, source.root_path, page);
+          } else {
+            const paths = files.map((file) => window.hub.files.path_for_file(file) || file.path || '').filter(Boolean);
+            if (!paths.length) throw new Error('Could not resolve the dropped file paths.');
+            await open_paths_in_page(grid, view, page, paths);
+          }
+        } catch (error) { show_banner(grid, error_text(error)); }
+      })();
+    });
+  }
+
+  async function open_page_terminal(grid, view, side) {
+    const page = view.active_page;
+    const terminals = view.panes.filter((pane) => pane.page_id === page.id && pane.term && !pane.disposed);
+    const anchor = terminals.includes(view.selected) ? view.selected : terminals[0];
+    await launch_seats_in_grid(grid, view.workspace,
+      [{ agent_id: 'terminal', label: 'Terminal', command: 'powershell.exe' }], {
+        page_id: page.id,
+        split_target: side ? anchor : null,
+        split_side: side,
+        cwd: anchor ? anchor.cwd : view.workspace.path,
+      });
+  }
+
   // cwd is where the pane runs now; base_cwd is the folder it was asked to use (the repo, when cwd is a worktree).
   // Dropping files on a pane copies them into its cwd (unless they already live inside it)
   // and pastes the absolute destinations at the CLI cursor, so the running agent can use them.
@@ -730,6 +862,8 @@
       const types = Array.from(event.dataTransfer.types || []);
       if (!types.includes('Files') && !types.includes(INTERNAL_PATH_TYPE)) return;
       event.preventDefault();
+      event.stopPropagation();
+      pane.view.pane_grid.classList.remove('tg-page-drop-target');
       event.dataTransfer.dropEffect = 'copy';
       element.classList.add('tg-drop-target');
     });
@@ -1059,11 +1193,15 @@
     pane.term.paste(text);
   }
 
-  function mount_pane(grid, view, pane) {
+  function mount_pane(grid, view, pane, page = view.active_page, target, side) {
+    const visible_page = view.active_page;
+    view.active_page = page;
     view.zoomed = null;
-    insert_into_layout(view, pane);
+    pane.page_id = view.active_page.id;
+    insert_into_layout(view, pane, target, side);
     view.panes.push(pane);
     view.pane_grid.appendChild(pane.element);
+    view.active_page = visible_page;
     relayout_view(grid, view);
     pane.term.open(pane.body);
     refit_pane(pane);
@@ -1159,6 +1297,7 @@
   }
 
   function mount_file_pane(grid, view, pane) {
+    pane.page_id = view.active_page.id;
     const anchor = largest_pane(view);
     insert_into_layout(view, pane, anchor, 'bottom');
     view.panes.push(pane);
@@ -1167,7 +1306,7 @@
   }
 
   function file_group(view) {
-    return view.panes.find((pane) => pane.kind === 'file' && !pane.disposed) || null;
+    return view.panes.find((pane) => pane.kind === 'file' && !pane.disposed && pane.page_id === view.active_page.id) || null;
   }
 
   function render_file_tabs(grid, pane) {
@@ -1177,6 +1316,12 @@
       button.type = 'button';
       button.textContent = file.name + (file.dirty ? ' *' : '');
       button.title = `${file.root} / ${file.path}`;
+      button.draggable = true;
+      button.addEventListener('dragstart', (event) => {
+        event.dataTransfer.setData(INTERNAL_PATH_TYPE, JSON.stringify({ root_path: file.root, rel_path: file.path }));
+        event.dataTransfer.setData('text/plain', file.path);
+        event.dataTransfer.effectAllowed = 'copy';
+      });
       button.classList.toggle('tf-file-tab-active', index === pane.active);
       button.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -1507,10 +1652,14 @@
     return { ok: false, blocked: names };
   }
 
-  // One file region per workspace. Further files become tabs in that region.
-  function open_file_in_grid(grid, workspace, rel_path, root_path) {
+  // One file region per page. Further files become tabs in that region.
+  function open_file_in_grid(grid, workspace, rel_path, root_path, page) {
     const view = grid.views.get(workspace.id);
     if (!view || typeof rel_path !== 'string' || rel_path === '') return;
+    page = page || view.active_page;
+    if (page.closing || !view.pages.includes(page)) return;
+    const visible_page = view.active_page;
+    view.active_page = page;
     const root = root_path || (view.file_panel && view.file_panel.current_root ? view.file_panel.current_root() : workspace.path);
     let pane = file_group(view);
     if (!pane) {
@@ -1529,7 +1678,9 @@
       index = pane.files.length - 1;
     }
     void activate_file(grid, pane, index, true);
-    select_tab(grid, pane);
+    view.active_page = visible_page;
+    relayout_view(grid, view);
+    if (visible_page === page) select_tab(grid, pane);
     if (!view.hold_layout) save_view_layout(grid, view);
   }
 
@@ -1545,7 +1696,7 @@
   const FULL_RECT = { x: 0, y: 0, w: 1, h: 1 };
 
   function pane_key(pane) {
-    if (pane.kind === 'file') return 'file-group';
+    if (pane.kind === 'file') return pane.page_id === 'page-1' ? 'file-group' : `file-group:${pane.page_id}`;
     return pane.record_id || pane.slot_id || `pane-${pane.pane_id}`;
   }
 
@@ -1562,18 +1713,20 @@
 
   function save_view_layout(grid, view) {
     if (!view || !view.workspace || view.disposed || view.hold_layout) return;
-    const group = file_group(view);
     save_workspace_ui(view.workspace.id, {
       files_open: view.files_open,
       files_width: view.files_width,
       tree: serialize_layout(view.layout),
-      file_tabs: group ? group.files.map((file) => ({ root: file.root, path: file.path })) : [],
+      active_page: view.active_page.id,
+      pages: view.pages.map((page) => ({ id: page.id, name: page.name, tree: serialize_layout(page.layout) })),
+      file_tabs: view.panes.filter((pane) => pane.kind === 'file').flatMap((pane) =>
+        pane.files.map((file) => ({ root: file.root, path: file.path, page_id: pane.page_id }))),
     });
   }
 
   function apply_saved_layout(view) {
     const saved = workspace_ui(view.workspace.id);
-    if (!saved.tree) return;
+    if (!saved.tree && !saved.pages) return;
     const pool = new Map();
     for (const pane of view.panes) pool.set(pane_key(pane), pane);
     const rebuild = (node) => {
@@ -1602,9 +1755,21 @@
         sizes: sizes.map((size) => size / sum),
       };
     };
-    const tree = rebuild(saved.tree);
-    if (tree) view.layout = tree;
-    for (const pane of pool.values()) insert_into_layout(view, pane);
+    const assign = (node, page) => {
+      if (!node) return;
+      if (node.type === 'leaf') node.pane.page_id = page.id;
+      else node.children.forEach((child) => assign(child, page));
+    };
+    for (const page of view.pages) {
+      const record = saved.pages ? saved.pages.find((item) => item.id === page.id) : saved;
+      page.layout = rebuild(record && record.tree);
+      assign(page.layout, page);
+    }
+    view.active_page = view.pages.find((page) => page.id === saved.active_page) || view.pages[0];
+    for (const pane of pool.values()) {
+      pane.page_id = view.active_page.id;
+      insert_into_layout(view, pane);
+    }
   }
 
   function ensure_forget_button(grid, pane, record_id) {
@@ -1695,7 +1860,7 @@
     let best = null;
     let best_area = -1;
     for (const pane of view.panes) {
-      if (pane.disposed || !pane.rect) continue;
+      if (pane.disposed || pane.page_id !== view.active_page.id || !pane.rect) continue;
       const area = pane.rect.w * pane.rect.h;
       if (area > best_area + 1e-6) {
         best = pane;
@@ -1792,15 +1957,41 @@
     });
   }
 
+  // Prune stale leaves and normalize each split, including layouts saved by older builds.
+  function compact_layout(node, panes) {
+    if (!node) return null;
+    if (node.type === 'leaf') return !node.pane.disposed && panes.includes(node.pane) ? node : null;
+    const children = [];
+    const sizes = [];
+    node.children.forEach((child, index) => {
+      const live = compact_layout(child, panes);
+      if (!live) return;
+      children.push(live);
+      const weight = Number(node.sizes[index]);
+      sizes.push(Number.isFinite(weight) && weight > 0 ? weight : 1);
+    });
+    if (!children.length) return null;
+    if (children.length === 1) return children[0];
+    const total = sizes.reduce((sum, size) => sum + size, 0);
+    node.children = children;
+    node.sizes = sizes.map((size) => size / total);
+    return node;
+  }
+
   function relayout_view(grid, view) {
-    if (view.zoomed && (view.zoomed.disposed || !view.panes.includes(view.zoomed))) view.zoomed = null;
+    const panes = view.panes.filter((pane) => pane.page_id === view.active_page.id && !pane.disposed);
+    view.layout = compact_layout(view.layout, panes);
     const dividers = [];
     if (view.layout) compute_layout(view.layout, FULL_RECT, dividers);
-    if (!view.selected || view.selected.disposed) view.selected = view.panes[0] || null;
-    for (const pane of view.panes) place_pane(pane);
+    if (!panes.includes(view.selected)) view.selected = panes[0] || null;
+    for (const pane of view.panes) {
+      pane.element.hidden = !panes.includes(pane);
+      if (!pane.element.hidden) place_pane(pane);
+    }
     render_tabs(grid, view);
     render_dividers(grid, view, dividers);
-    view.hint.hidden = count_panes(view) > 0;
+    view.hint.hidden = panes.length > 0;
+    view.split_button.disabled = !panes.some((pane) => pane.term);
     if (grid.active_view === view) update_note(grid);
   }
 
@@ -1896,7 +2087,7 @@
   function find_drop_spot(view, dragged, client_x, client_y) {
     const area = view.pane_grid.getBoundingClientRect();
     for (const pane of view.panes) {
-      if (pane === dragged || pane.disposed || !pane.rect) continue;
+      if (pane === dragged || pane.disposed || pane.page_id !== view.active_page.id || !pane.rect) continue;
       const left = area.left + pane.rect.x * area.width;
       const top = area.top + pane.rect.y * area.height;
       const width = pane.rect.w * area.width;
@@ -1955,6 +2146,7 @@
       insert_into_layout(view, pane, spot.target, spot.zone);
     }
     relayout_view(grid, view);
+    save_view_layout(grid, view);
   }
 
   function toggle_zoom() {
@@ -2054,6 +2246,7 @@
     pane.terminal_id = terminal_id;
     PANE_BY_TERMINAL.set(terminal_id, pane);
     set_pane_status(pane, status, exit_code);
+    save_view_layout(pane.grid, pane.view);
     if (status === 'running') {
       window.hub.terminals.resize(terminal_id, pane.term.cols, pane.term.rows);
     }
@@ -2104,6 +2297,9 @@
   function select_tab(grid, pane) {
     if (!pane || pane.disposed) return;
     const view = pane.view;
+    if (pane.page_id !== view.active_page.id) {
+      select_page(grid, view, view.pages.find((page) => page.id === pane.page_id));
+    }
     set_active_pane(grid, pane);
     render_tabs(grid, view);
     if (pane.term) pane.term.focus();
@@ -2125,60 +2321,78 @@
     });
   }
 
-  function render_tabs(grid, view) {
-    for (const pane of view.panes) {
-      if (!pane.tab) {
-        const tab = create_el('div', 'tg-tab');
-        tab.dataset.paneId = String(pane.pane_id);
-        const button = create_el('button', 'tg-tab-select');
-        button.type = 'button';
-        button.setAttribute('role', 'tab');
-        pane.element.id = `pane-${pane.pane_id}`;
-        button.setAttribute('aria-controls', pane.element.id);
-        button.title = pane.kind === 'file' ? pane.path : `${pane.name} · ${pane.agent_label}`;
-        if (pane.kind === 'file') {
-          button.draggable = true;
-          button.addEventListener('dragstart', (event) => {
-            event.dataTransfer.setData(INTERNAL_PATH_TYPE, JSON.stringify({
-              root_path: view.workspace.path, rel_path: pane.path,
-            }));
-            event.dataTransfer.setData('text/plain', pane.path);
-            event.dataTransfer.effectAllowed = 'copy';
-          });
-        }
-        const logo = build_logo(pane.agent_id);
-        if (logo) button.append(logo);
-        else button.append(create_el('span', 'tg-tab-glyph', pane.kind === 'file' ? '▤' : '›_'));
-        button.append(create_el('span', 'tg-tab-label', pane.kind === 'file' ? pane.name : `${pane.name} · ${pane.agent_label}`));
-        button.addEventListener('click', () => select_tab(grid, pane));
-        button.addEventListener('keydown', (event) => {
-          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-          event.preventDefault();
-          const index = view.panes.indexOf(pane);
-          const next = event.key === 'Home' ? 0 : event.key === 'End' ? view.panes.length - 1 :
-            (index + (event.key === 'ArrowLeft' ? -1 : 1) + view.panes.length) % view.panes.length;
-          select_tab(grid, view.panes[next]);
-          view.panes[next].tab_button.focus();
-        });
-        const close = create_el('button', 'tg-tab-close', '×');
-        close.type = 'button';
-        close.setAttribute('aria-label', `Close ${pane.name}`);
-        close.addEventListener('click', () => {
-          if (pane.kind === 'file') { remove_pane(grid, pane); notify_grid(grid); }
-          else void close_pane(grid, pane);
-        });
-        tab.append(button, close);
-        pane.tab = tab;
-        pane.tab_button = button;
-        view.tabs.append(tab);
-        if (pane.kind !== 'file') attach_drop_to_pane(grid, pane, tab);
-      }
-      const selected = view.selected === pane;
-      pane.tab.classList.toggle('tg-tab-active', selected);
-      pane.tab_button.setAttribute('aria-selected', String(selected));
-      pane.tab_button.tabIndex = selected ? 0 : -1;
+  function make_page(view) {
+    let number = 1;
+    while (view.pages.some((page) => page.id === `page-${number}`)) number += 1;
+    return { id: `page-${number}`, name: `Page ${number}`, layout: null };
+  }
+
+  function select_page(grid, view, page) {
+    if (!page || !view.pages.includes(page)) return;
+    view.active_page = page;
+    relayout_view(grid, view);
+    if (view.selected) set_active_pane(grid, view.selected);
+    else if (grid.active_pane && grid.active_pane.view === view) {
+      grid.active_pane.element.classList.remove('tg-active');
+      grid.active_pane = null;
+      if (view.file_panel) view.file_panel.set_context({ path: view.workspace.path, label: view.workspace.name });
     }
-    view.tabs.hidden = view.panes.length === 0;
+    refit_view(view);
+    if (view.selected && view.selected.term) view.selected.term.focus();
+    save_view_layout(grid, view);
+  }
+
+  async function close_page(grid, view, page) {
+    if (page.closing) return;
+    page.closing = true;
+    try {
+      const panes = view.panes.filter((pane) => pane.page_id === page.id);
+      // Save editors before ending any terminals. Conflicted edits keep their page open.
+      for (const pane of panes.filter((pane) => pane.kind === 'file')) {
+        while (!pane.disposed && pane.files.length) {
+          const count = pane.files.length;
+          await close_file_at(grid, pane, pane.active);
+          if (!pane.disposed && pane.files.length === count) return;
+        }
+      }
+      for (const pane of panes.filter((pane) => pane.kind !== 'file')) await close_pane(grid, pane);
+      const index = view.pages.indexOf(page);
+      view.pages.splice(index, 1);
+      if (!view.pages.length) view.pages.push(make_page(view));
+      select_page(grid, view, view.active_page === page ? view.pages[Math.max(0, index - 1)] : view.active_page);
+    } finally { page.closing = false; }
+  }
+
+  function render_tabs(grid, view) {
+    view.tabs.replaceChildren();
+    view.tabs.hidden = view.pages.length <= 1;
+    for (const page of view.pages) {
+      const tab = create_el('div', 'tg-tab');
+      tab.dataset.pageId = page.id;
+      const selected = view.active_page === page;
+      tab.classList.toggle('tg-tab-active', selected);
+      const button = create_el('button', 'tg-tab-select', page.name);
+      button.type = 'button';
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      button.addEventListener('click', () => select_page(grid, view, page));
+      button.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const index = view.pages.indexOf(page);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? view.pages.length - 1 :
+          (index + (event.key === 'ArrowLeft' ? -1 : 1) + view.pages.length) % view.pages.length;
+        select_page(grid, view, view.pages[next]);
+        view.tabs.querySelector(`[data-page-id="${view.active_page.id}"] button`).focus();
+      });
+      const close = create_el('button', 'tg-tab-close', '×');
+      close.type = 'button';
+      close.setAttribute('aria-label', `Close ${page.name}`);
+      close.addEventListener('click', () => void close_page(grid, view, page));
+      tab.append(button, close);
+      view.tabs.append(tab);
+    }
   }
 
   function remove_pane(grid, pane) {
@@ -2194,12 +2408,18 @@
     if (pane.resize_timer) window.clearTimeout(pane.resize_timer);
     if (pane.observer) pane.observer.disconnect();
     if (pane.term) pane.term.dispose();
-    if (pane.tab) pane.tab.remove();
     pane.element.remove();
-    remove_from_layout(view, pane);
+    const page = view.pages.find((item) => item.id === pane.page_id);
+    if (page) {
+      const holder = { layout: page.layout };
+      remove_from_layout(holder, pane);
+      page.layout = holder.layout;
+    }
     if (grid.active_pane === pane) grid.active_pane = null;
     relayout_view(grid, view);
     if (!view.disposed && view.selected) select_tab(grid, view.selected);
+    save_view_layout(grid, view);
+    refit_view(view);
   }
 
   // First unused person name in this workspace; "Agent N" once the pool is used up.
@@ -2236,18 +2456,22 @@
     await wait_for_attach(view);
     if (view.disposed) return;
 
+    const page = options && options.page_id ? view.pages.find((item) => item.id === options.page_id) : view.active_page;
+    if (!page || page.closing) return;
     const want_worktree = Boolean(options && options.use_worktree === true);
     clear_banner(grid);
     const failures = [];
     let first_pane = null;
     for (const seat of seats) {
-      if (view.disposed) break;
+      if (view.disposed || page.closing || !view.pages.includes(page)) break;
       const spec = seat_spec(view, seat || {});
+      if (options && options.cwd) spec.cwd = options.cwd;
       const pane = build_pane(grid, view, spec);
-      mount_pane(grid, view, pane);
+      const target = options && options.split_target;
+      mount_pane(grid, view, pane, page, target && !target.disposed ? target : null, options && options.split_side);
       if (!first_pane) {
         first_pane = pane;
-        set_active_pane(grid, pane);
+        if (view.active_page === page) set_active_pane(grid, pane);
       }
       try {
         const terminal_id = await launch_terminal(pane, {
@@ -2269,7 +2493,7 @@
     }
 
     if (failures.length) show_banner(grid, failures.join(' | '));
-    if (grid.active_view === view && first_pane && !first_pane.disposed) first_pane.term.focus();
+    if (grid.active_view === view && view.active_page === page && first_pane && !first_pane.disposed) first_pane.term.focus();
   }
 
   // A saved record becomes a pane again: same title (name, agent), same command, the Claude session resumed when

@@ -151,6 +151,38 @@
   min-height: 0;
 }
 
+.tg-page-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.tg-split-direction { margin-left: auto; }
+.tg-split-direction option { background: var(--panel); color: var(--text); }
+.tg-page-empty {
+  position: absolute;
+  inset: 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+.tg-page-empty-title { color: var(--text); font-size: 20px; font-weight: 600; }
+.tg-page-empty-note { max-width: 360px; margin: 0; line-height: 1.6; }
+.tg-page-empty-actions { display: flex; gap: 8px; }
+.tg-page-empty-actions .tg-btn { height: 32px; padding: 0 16px; }
+.tg-page-empty-actions [data-action="open_terminal"] { color: var(--accent); border-color: var(--accent); }
+.tg-page-drop-target { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent_fill); }
+
 .tg-grid {
   flex: 1 1 auto;
   position: relative;
@@ -568,7 +600,7 @@
   cursor: copy;
 }
 
-/* Compact workbench chrome: persistent tabs above the split panes, explorer on the right. */
+/* Compact workbench chrome: workspace pages above the split panes, explorer on the right. */
 .tg-toolbar { background: var(--panel); }
 .tg-note { margin-left: 8px; margin-right: auto; }
 .tg-tabs {
