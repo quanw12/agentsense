@@ -1,42 +1,42 @@
-# Prompt review sau khi Grok bàn giao
+# Review prompt after Grok's handoff
 
-Hãy review và kiểm chứng thay đổi local của Grok cho AgentSense theo:
+Review and verify Grok's local changes to AgentSense against:
 
-- `stabilization-tasks.md`: hợp đồng T01–T28.
-- `stabilization-results.md`: bằng chứng người thực hiện đã ghi.
-- `docs/handoffs/stabilization/audit.md`: phát hiện trước sửa, không phải kết quả hiện tại.
+- `stabilization-tasks.md`: the T01–T28 contract.
+- `stabilization-results.md`: the evidence recorded by the implementer.
+- `docs/handoffs/stabilization/audit.md`: findings from before the fixes, not the current results.
 
-Chỉ review/kiểm chứng trong lượt này. **Không push, merge, tạo PR, tag, release, deploy hoặc đổi visibility**,
-kể cả khi review không còn findings. Kết luận APPROVED_FOR_PUSH là kết quả review, không tự thực hiện push.
+Only review/verify in this pass. **Do not push, merge, create a PR, tag, release, deploy or change visibility**,
+even if the review has no findings left. An APPROVED_FOR_PUSH verdict is a review result; it does not mean you push.
 
-## Trình tự
+## Sequence
 
-1. Đọc hướng dẫn repo, git status, branch, base/head SHA và local commits. Không reset/clean/ghi đè thay đổi.
-   Xác minh base SHA thật; baseline audit cũ `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa` chỉ là mốc tham khảo.
-2. Đọc diff và các đường gọi liên quan, không chỉ dựa vào tóm tắt hoặc nhãn FIXED_VERIFIED của Grok.
-   Kiểm tra cả thay đổi chưa commit và các file mới. Không chạy script mới trước khi đọc để hiểu tác động.
-3. Review từng T01–T28 và subtask T26/T28. Mỗi mục ghi kết luận reviewer riêng: VERIFIED / PARTIAL /
-   FAILED / NOT_RUN / BLOCKED. Kiểm tra migration, backwards compatibility và nguy cơ mất dữ liệu.
-4. Tái hiện độc lập trên fixture/profile/repo/worktree tạm. Không dừng/đọc transcript/đổi dữ liệu agent thật.
-5. Ưu tiên kiểm chứng: click chỉ đổi focus và không đổi bounds; divider resize + restore;
-   một vùng file có tab; model/provider đúng qua restart; worktree không bị xóa sai;
-   preview/editor đúng root và nội dung; conflict-safe save; không lộ secret; junction boundary;
-   target drop đúng; cleanup/native lifecycle; source/dist/payload cùng build.
-6. Đọc và chạy các regression/smoke có ý nghĩa. Kiểm tra không có mock/suppress/tăng timeout che lỗi,
-   test chỉ kiểm tra implementation hoặc giữ expectation UX cũ. Xác minh deadline/teardown và test thất bại thật sự làm exit nonzero.
-7. Kiểm tra bằng chứng clean-machine/real CLI/provider/device/soak: nguồn, ngày, versions và kết quả.
-   Không biến kết quả mock hoặc thiếu thiết bị/tài khoản thành PASS. Thiếu signing/public hosting không được ghi đã phát hành.
-8. Kiểm tra installer, rollback, permission, artifact manifest và dữ liệu đi kèm mà không thực hiện publication.
+1. Read the repo guidelines, git status, branch, base/head SHA and local commits. Do not reset/clean/overwrite changes.
+   Verify the real base SHA; the old audit baseline `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa` is only a reference point.
+2. Read the diff and the related call paths; do not rely only on Grok's summaries or FIXED_VERIFIED labels.
+   Check both uncommitted changes and new files. Do not run new scripts before reading them to understand their impact.
+3. Review each of T01–T28 and the T26/T28 subtasks. Record a separate reviewer verdict for each: VERIFIED / PARTIAL /
+   FAILED / NOT_RUN / BLOCKED. Check migration, backwards compatibility and data-loss risk.
+4. Reproduce independently on a temporary fixture/profile/repo/worktree. Do not stop, read transcripts of, or change real agent data.
+5. Verification priorities: a click only changes focus and does not change bounds; divider resize + restore;
+   one file area with tabs; correct model/provider across restart; worktrees are never wrongly deleted;
+   preview/editor uses the right root and content; conflict-safe save; no secret leaks; junction boundary;
+   correct drop target; cleanup/native lifecycle; source/dist/payload come from the same build.
+6. Read and run the meaningful regression/smoke tests. Check there are no mocks/suppressions/raised timeouts hiding failures,
+   tests that only check the implementation, or tests that keep old UX expectations. Verify deadlines/teardown and that real test failures exit nonzero.
+7. Check the clean-machine/real CLI/provider/device/soak evidence: source, date, versions and results.
+   Do not turn mock results or missing devices/accounts into PASS. Missing signing/public hosting must not be recorded as released.
+8. Check the installer, rollback, permissions, artifact manifest and bundled data without publishing anything.
 
-## Bàn giao review
+## Review handoff
 
-- Findings theo mức ảnh hưởng, kèm file/dòng hiện tại, trigger, tác động và cách xác minh.
-- Ma trận reviewer đầy đủ T01–T28 + subtask, chỉ rõ phần Grok báo xong nhưng chưa đủ bằng chứng.
-- Lệnh đã chạy, kết quả, môi trường và các giới hạn.
-- Kết luận riêng: chất lượng code local; phạm vi được kiểm chứng; khả năng public release.
-- Cập nhật phần dành cho Codex trong `stabilization-results.md`, nêu HEAD nào đã được review.
-- Đặt CHANGES_REQUESTED nếu còn regression/lỗi hoặc báo cáo sai trạng thái.
-  Chỉ đặt APPROVED_FOR_PUSH khi code phù hợp phạm vi đã thống nhất và mọi thiếu sót còn lại được nêu rõ,
-  không che một requirement chưa hoàn tất. Requirement chức năng còn lỗi phải ghi CHANGES_REQUESTED/PARTIAL,
-  không tự bỏ khỏi scope để approve. APPROVED_FOR_PUSH không đồng nghĩa APPROVED_FOR_PUBLIC_RELEASE.
-- Dừng ở kết luận review; không tự push hoặc phát hành.
+- Findings by impact, with current file/line, trigger, impact and how to verify.
+- A complete reviewer matrix for T01–T28 + subtasks, clearly marking what Grok reported done without enough evidence.
+- Commands run, results, environment and limits.
+- Separate verdicts: local code quality; verified scope; public release readiness.
+- Update the Codex section of `stabilization-results.md`, stating which HEAD was reviewed.
+- Set CHANGES_REQUESTED if regressions/bugs or misreported statuses remain.
+  Only set APPROVED_FOR_PUSH when the code matches the agreed scope and every remaining gap is stated clearly,
+  without hiding an unfinished requirement. A functional requirement that is still broken must be CHANGES_REQUESTED/PARTIAL,
+  not dropped from scope to approve. APPROVED_FOR_PUSH does not mean APPROVED_FOR_PUBLIC_RELEASE.
+- Stop at the review verdict; do not push or release.
