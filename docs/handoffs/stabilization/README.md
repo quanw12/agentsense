@@ -1,22 +1,22 @@
-# Hồ sơ đầu vào cho lượt ổn định AgentSense
+# Input dossier for the AgentSense stabilization round
 
-Các file ở thư mục này là bằng chứng của lượt audit, không phải kết quả Grok đã sửa xong.
-Mốc code: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa`, ngày 03/11/2026.
+The files in this folder are evidence from the audit round, not results of Grok's completed fixes.
+Code reference point: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa`, dated 2026-11-03.
 
-- `audit.md`: 28 vấn đề/giới hạn đã ghi nhận, nhãn tái hiện/mã nguồn/chưa kết luận.
-- `release-readiness.md`: lần đánh giá cài đặt và phân phối trước đó.
-- `evidence/audit-workbench-results.json`: kết quả fixture Electron/main/terminal tạm.
-- `evidence/audit-files-results.json`: kết quả fixture file/junction/import/session record.
+- `audit.md`: 28 recorded issues/limits, labelled reproduced/source/inconclusive.
+- `release-readiness.md`: the earlier installation and distribution assessment.
+- `evidence/audit-workbench-results.json`: results of the temporary Electron/main/terminal fixture.
+- `evidence/audit-files-results.json`: results of the file/junction/import/session record fixture.
 
-Các đường dẫn máy trong evidence là đường dẫn fixture cũ, không phải target để sửa/xóa.
-Tái hiện phải tạo fixture mới. Không thay đổi kết quả gốc để thể hiện bản sửa đã pass.
+Machine paths in the evidence are old fixture paths, not targets to fix/delete.
+Reproductions must create new fixtures. Do not change the original results to show that a fix passes.
 
-Tài liệu thực hiện nằm ở repo root:
+The implementation documents are at the repo root:
 
 1. `grok-4.7-prompt.md`
 2. `stabilization-plan.md`
 3. `stabilization-tasks.md`
 4. `stabilization-results.md`
 
-Quy tắc cuối: local branch/local commits được phép; **không push/merge/PR/tag/release/deploy**.
-Codex review code và bằng chứng trước khi quyết định bước remote tiếp theo.
+Final rule: local branches/local commits are allowed; **no push/merge/PR/tag/release/deploy**.
+Codex reviews the code and evidence before deciding the next remote step.

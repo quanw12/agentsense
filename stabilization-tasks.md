@@ -1,342 +1,342 @@
-# AgentSense — nhiệm vụ chi tiết T01–T28
+# AgentSense — detailed tasks T01–T28
 
-Ngày giao: 03/11/2026. Baseline audit: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa`.
-Repo tham chiếu: `quanw12/AgentSense`. Branch local đề xuất: `fix/workbench-stability`.
-Người thực hiện: Grok 4.7. Gate cuối: Codex review. **Chưa được push/merge/publish.**
+Assigned: 2026-11-03. Audit baseline: `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa`.
+Reference repo: `quanw12/AgentSense`. Suggested local branch: `fix/workbench-stability`.
+Implementer: Grok 4.7. Final gate: Codex review. **Not yet allowed to push/merge/publish.**
 
-## 0. Quy tắc nghiệm thu
+## 0. Acceptance rules
 
-- Đọc `grok-4.7-prompt.md` và `stabilization-plan.md` trước khi làm.
-- T01–T28 ánh xạ 1:1 với 28 phát hiện trong `docs/handoffs/stabilization/audit.md`.
-- Vị trí code dưới đây là điểm bắt đầu tìm kiếm; xác minh lại ở HEAD đang làm, không sửa theo số dòng cứng.
-- Mỗi mục cần: nguyên nhân; thay đổi; kiểm tra trước/sau; đường dẫn log/ảnh; trạng thái; phần chưa đạt.
-- Chỉ dùng FIXED_VERIFIED khi toàn bộ tiêu chí đã được kiểm chứng. Không coi NOT_RUN/BLOCKED là PASS.
-- Test bản source và bản đóng gói là hai việc khác nhau. Reload renderer và thoát/mở lại app cũng là hai việc khác nhau.
-- Không tác động dữ liệu/profile/agent thật; fixture phải có root tạm được kiểm tra trước khi dọn.
-- Mỗi lần chạy app/dev/exe để test dùng `AGENT_HUB_USER_DATA` riêng trong tiến trình con; không dùng profile mặc định.
-- Khi làm việc dài, cập nhật `stabilization-results.md`. Có thể chia commit local theo giai đoạn,
-  nhưng không được bỏ mục hoặc tự thu nhỏ yêu cầu.
+- Read `grok-4.7-prompt.md` and `stabilization-plan.md` before starting.
+- T01–T28 map 1:1 to the 28 findings in `docs/handoffs/stabilization/audit.md`.
+- The code locations below are starting points for searching; re-verify at the HEAD you are working on, do not fix by hard-coded line numbers.
+- Each item needs: root cause; change; before/after check; log/screenshot paths; status; what is still not met.
+- Only use FIXED_VERIFIED when every criterion has been verified. Do not treat NOT_RUN/BLOCKED as PASS.
+- Testing the source build and the packaged build are two different things. Reloading the renderer and quitting/reopening the app are also two different things.
+- Do not touch real data/profiles/agents; fixtures must have a temporary root that is checked before cleanup.
+- Every app/dev/exe run for testing uses its own `AGENT_HUB_USER_DATA` in the child process; never the default profile.
+- During long work, update `stabilization-results.md`. Local commits may be split by phase,
+  but items must not be dropped or requirements quietly reduced.
 
-## Giai đoạn A — pane cố định
+## Phase A — fixed panes
 
-### T01 — Chọn agent chỉ đổi focus [P1]
+### T01 — Selecting an agent only changes focus [P1]
 
-**Vấn đề:** Tabs và zoom dùng FULL_RECT cho pane được chọn, ẩn các pane khác; trái nhu cầu xem đồng thời.
-**Code bắt đầu:** `src/renderer/terminal_grid.js`: place_pane, select_tab, toggle_zoom, focus_session_in_grid;
+**Problem:** Tabs and zoom use FULL_RECT for the selected pane and hide the other panes, contrary to the need to view them at the same time.
+**Starting code:** `src/renderer/terminal_grid.js`: place_pane, select_tab, toggle_zoom, focus_session_in_grid;
 `src/renderer/sidebar.js`; `src/renderer/terminal_grid.css`.
 
-- [ ] Tách selected/focused pane khỏi layout/geometry. Bấm thân terminal, tab, sidebar và Ctrl+Tab chỉ đổi focus.
-- [ ] Bỏ fullscreen-switch và double-click maximize khỏi luồng mặc định; không cho thao tác chọn bật lại zoom cũ.
-- [ ] Di trú `agentsense.workbench` có mode=tabs/zoom về chế độ fixed split an toàn; không xóa workspace/session của người dùng.
-- [ ] Không dùng scrollIntoView làm cuộn cả workbench hoặc giật màn hình khi pane đã nhìn thấy.
-- [ ] Giữ khả năng kéo divider, clipboard, nhập liệu, keyboard navigation và resize PTY.
+- [ ] Separate the selected/focused pane from layout/geometry. Clicking the terminal body, a tab, the sidebar and Ctrl+Tab only change focus.
+- [ ] Remove fullscreen-switch and double-click maximize from the default flow; selection must not re-enable the old zoom.
+- [ ] Migrate `agentsense.workbench` with mode=tabs/zoom to a safe fixed split mode; do not delete the user's workspaces/sessions.
+- [ ] Do not use scrollIntoView in a way that scrolls the whole workbench or jolts the screen when the pane is already visible.
+- [ ] Keep divider dragging, clipboard, input, keyboard navigation and PTY resizing.
 
-**Nghiệm thu:** với 2/4/6 pane, click và chuyển focus ít nhất 20 lần qua các đường điều hướng;
-bounds của mọi pane không đổi quá 1 CSS px, số pane đang hiện không giảm; không tạo lại PTY hoặc gửi phím
-điều hướng vào shell. Chọn agent trong workspace khác chỉ chuyển đúng workspace, giữ bố cục đã lưu của nó.
-Double-click header cũng không làm terminal chiếm toàn vùng. Chạy case có legacy mode=tabs từ profile fixture.
+**Acceptance:** with 2/4/6 panes, click and switch focus at least 20 times through the navigation paths;
+no pane's bounds change by more than 1 CSS px, the number of visible panes does not drop; no PTY is recreated and no
+navigation keys are sent into the shell. Selecting an agent in another workspace only switches to that workspace and keeps its saved layout.
+Double-clicking a header does not make a terminal take the whole area either. Run the case with legacy mode=tabs from a fixture profile.
 
-### T02 — Lưu bố cục theo workspace [P1, phụ thuộc T01]
+### T02 — Save the layout per workspace [P1, depends on T01]
 
 **Code:** terminal_grid.js: save_ui, create_view, start_divider_drag; storage/session identity.
 
-- [ ] Lưu split tree, tỷ lệ, slot/order, logical session identity, vùng file và tab/file đang mở; không dựa vào pane_serial hay PID dễ đổi.
-- [ ] Restore sau renderer reload và app relaunch; dữ liệu cũ/corrupt/missing file phải fallback rõ ràng, không phá phiên khác.
-- [ ] Khi cửa sổ nhỏ hơn, áp dụng min size/adaptive layout mà không làm mất tỷ lệ người dùng đã lưu.
+- [ ] Save the split tree, ratios, slot/order, logical session identity, file area and open tabs/files; do not rely on pane_serial or PIDs that change easily.
+- [ ] Restore after renderer reload and app relaunch; old/corrupt/missing-file data must fall back clearly without breaking other sessions.
+- [ ] When the window is smaller, apply min sizes/adaptive layout without losing the ratios the user saved.
 
-**Nghiệm thu:** bố cục 70/30 và split lồng nhau giữ tỷ lệ sau reload, đóng/mở app, đổi workspace;
-file tab còn tồn tại được phục hồi, file mất có phản hồi; terminal ID/geometry không bị gán nhầm.
-Hai workspace có cấu hình khác nhau không ghi đè nhau. Không lưu API key trong state UI.
+**Acceptance:** a 70/30 layout and nested splits keep their ratios after reload, app close/reopen and workspace switch;
+file tabs that still exist are restored, missing files get feedback; terminal IDs/geometry are not mis-assigned.
+Two workspaces with different configurations do not overwrite each other. No API keys in UI state.
 
-### T03 — Một vùng file có nhiều tab; không chia pane vô hạn [P1, phụ thuộc T01–T02]
+### T03 — One file area with multiple tabs; no endless pane splitting [P1, depends on T01–T02]
 
 **Code:** terminal_grid.js: mount_file_pane, open_file_in_grid, insert_into_layout; file_panel.js.
 
-- [ ] File đầu mở/reveal vùng file theo vị trí/size đã lưu; các file tiếp theo thành tab trong cùng vùng.
-- [ ] Chuyển file/đóng tab không thay geometry terminal; click lại file dùng lại tab, không tạo bản sao.
-- [ ] Áp dụng kích thước tối thiểu thực tế và xử lý cửa sổ hẹp; không có pane chỉ cao vài px.
+- [ ] The first file opens/reveals the file area at its saved position/size; subsequent files become tabs in the same area.
+- [ ] Switching files/closing tabs does not change terminal geometry; clicking a file again reuses its tab, no duplicates.
+- [ ] Apply realistic minimum sizes and handle narrow windows; no pane only a few px tall.
 
-**Nghiệm thu:** mở 20 file xen kẽ text/image/PDF; số vùng split không tăng theo số file;
-terminal giữ nguyên sau khi vùng file đã mở. Không có pane dưới min size đã công bố; đóng tab/vùng file
-và reload không phá terminal hoặc mất tỷ lệ. Có kiểm tra bounds/overlap và ảnh app thật.
+**Acceptance:** open 20 files alternating text/image/PDF; the number of split areas does not grow with the number of files;
+terminals stay put once the file area is open. No pane below the published min size; closing tabs/the file area
+and reloading does not break terminals or lose ratios. Includes bounds/overlap checks and real app screenshots.
 
-### T04 — Tách cấu hình từng workspace [P2, phụ thuộc T01–T02]
+### T04 — Separate per-workspace configuration [P2, depends on T01–T02]
 
-- [ ] Bỏ một biến mode/layout chung áp cho mọi view; giữ preferences thực sự toàn app riêng với layout theo workspace.
-- [ ] Files panel tiếp tục bên phải; visibility/width/active context được định nghĩa và lưu nhất quán.
+- [ ] Remove a single shared mode/layout variable applied to every view; keep truly app-wide preferences separate from per-workspace layout.
+- [ ] The Files panel stays on the right; visibility/width/active context are defined and saved consistently.
 
-**Nghiệm thu:** thay divider/panel ở workspace A không đổi B; chuyển A→B→A và relaunch vẫn đúng.
-Nếu mode Tabs cũ bị loại bỏ theo T01, không tái tạo nó chỉ để giữ UI cũ.
+**Acceptance:** changing the divider/panel in workspace A does not change B; switching A→B→A and relaunching stays correct.
+If the old Tabs mode is removed per T01, do not recreate it just to keep the old UI.
 
-## Giai đoạn B — phiên, model, worktree
+## Phase B — sessions, models, worktrees
 
-### T05 — Giữ model/provider khi restart/restore [P1, phối hợp T18]
+### T05 — Keep model/provider across restart/restore [P1, coordinated with T18]
 
 **Code:** `src/main/session_store.js`, `pty_manager.js`, `ipc_terminals.js`, launch_page.js, terminal_grid.js.
 
-- [ ] Lưu model selection/provider ID và các tùy chọn có kiểu rõ ràng; main process resolve env/args khi launch/restart/restore.
-- [ ] Không sửa bằng cách ghi toàn bộ env_extra/API key vào sessions.json, preset, localStorage hoặc log.
-- [ ] Migration record cũ giữ nguyên default; provider bị xóa/không giải mã được phải báo cần hành động, không âm thầm chuyển provider/model.
+- [ ] Store the model selection/provider ID and explicitly typed options; the main process resolves env/args on launch/restart/restore.
+- [ ] Do not fix it by writing the whole env_extra/API key into sessions.json, presets, localStorage or logs.
+- [ ] Migrating old records keeps the default; a deleted/undecryptable provider must report that action is needed, not silently switch provider/model.
 
-**Nghiệm thu:** mock CLI ghi ra đúng model/endpoint không nhạy cảm sau launch, Restart, renderer reload,
-app relaunch và preset; fixture token không xuất hiện dạng thuần trong mọi file state/log/artifact.
-Kiểm tra không rò env giữa hai pane khác provider; real-provider test ghi riêng, thiếu tài khoản ghi NOT_RUN.
+**Acceptance:** a mock CLI prints the correct non-sensitive model/endpoint after launch, Restart, renderer reload,
+app relaunch and preset; the fixture token never appears in plain text in any state/log/artifact file.
+Check that env does not leak between two panes with different providers; real-provider tests are recorded separately, missing accounts recorded as NOT_RUN.
 
-### T06 — Bảo toàn ownership worktree khi reattach/restart [P1]
+### T06 — Preserve worktree ownership on reattach/restart [P1]
 
 **Code:** pty_manager.js: to_info/close_terminal; terminal_grid.js: attach_info_to_view/restore_spec/restart_pane;
 `src/main/worktree.js`.
 
-- [ ] Trả/giữ đầy đủ base_cwd, worktree path, repo, branch và ownership trong các hợp đồng cần thiết.
-- [ ] Restart giữ ngữ cảnh worktree hiện tại khi hợp lệ; tách restart process khỏi thao tác destroy session/worktree.
-- [ ] Không xóa thư mục mà tiến trình mới sắp dùng; không tự tạo branch mới thay thế ngữ cảnh cũ khi chỉ Restart.
-- [ ] Không force-remove worktree có changes, untracked file hoặc commit riêng.
+- [ ] Return/keep the full base_cwd, worktree path, repo, branch and ownership in the contracts that need them.
+- [ ] Restart keeps the current worktree context when valid; separate restarting the process from destroying the session/worktree.
+- [ ] Never delete a folder the new process is about to use; do not create a new branch to replace the old context on a plain Restart.
+- [ ] Never force-remove a worktree with changes, untracked files or its own commits.
 
-**Nghiệm thu:** clean/dirty/committed worktree, renderer reload rồi process exit/Restart, app relaunch và
-phone-created session đều giữ đúng cwd/branch/context. Case audit `cwd does not exist` không còn xuất hiện.
-Đóng chủ động một worktree sạch vẫn có cleanup an toàn; worktree bẩn/committed được giữ và thông báo đúng.
+**Acceptance:** clean/dirty/committed worktrees, renderer reload then process exit/Restart, app relaunch and
+phone-created sessions all keep the correct cwd/branch/context. The audit case `cwd does not exist` no longer occurs.
+Actively closing a clean worktree still cleans up safely; dirty/committed worktrees are kept and reported correctly.
 
-### T07 — Giữ phiên restore thất bại để retry [P1]
+### T07 — Keep failed restores for retry [P1]
 
 **Code:** terminal_grid.js: restore_saved_in_grid; `src/main/ipc_sessions.js`.
 
-- [ ] Không gọi discard chỉ vì spawn/restore lỗi tạm thời. Giữ metadata và lý do lỗi.
-- [ ] Có Retry, chọn lại thư mục phù hợp và Forget chủ động; chỉ Forget mới bỏ record theo hành động rõ ràng.
-- [ ] Lỗi một phiên không chặn các phiên còn lại hoặc làm mất model/provider/worktree của phiên lỗi.
+- [ ] Do not call discard just because a spawn/restore failed temporarily. Keep the metadata and the failure reason.
+- [ ] Offer Retry, choosing a suitable folder again, and an explicit Forget; only Forget removes the record, by explicit action.
+- [ ] One session failing must not block the others or lose the failed session's model/provider/worktree.
 
-**Nghiệm thu:** folder tạm không tồn tại/quyền từ chối/CLI thiếu rồi có lại; record vẫn còn và Retry chạy được.
-App relaunch vẫn hiển thị được lỗi/khả năng phục hồi. Không tự tạo hội thoại khác thay cho phiên đã lưu.
+**Acceptance:** temp folder missing/permission denied/CLI missing and then back; the record remains and Retry works.
+App relaunch can still show the error/recovery options. Do not silently create another conversation in place of the saved session.
 
-### T08 — Resume theo khả năng từng CLI [P2, phụ thuộc T05–T07 và T12]
+### T08 — Resume according to each CLI's capability [P2, depends on T05–T07 and T12]
 
-- [ ] Khai báo capability resume/restart/new-session và version hỗ trợ cho từng agent.
-- [ ] Agent có session ID/cơ chế resume chính thức: dùng adapter phù hợp, test args/session identity.
-- [ ] Agent không hỗ trợ hoặc chưa xác minh: ghi rõ chỉ khôi phục terminal/command; không hiển thị là tiếp tục hội thoại.
-- [ ] Claude session ID không tồn tại: giữ thông tin, giải thích và cho người dùng chủ động mở phiên mới.
+- [ ] Declare resume/restart/new-session capability and supported versions for each agent.
+- [ ] Agents with a session ID/official resume mechanism: use a proper adapter, test args/session identity.
+- [ ] Agents that do not support it or are unverified: state clearly that only the terminal/command is restored; do not present it as continuing the conversation.
+- [ ] Claude session ID does not exist: keep the info, explain it and let the user actively open a new session.
 
-**Nghiệm thu:** resume ID hợp lệ, ID mất, CLI version không hỗ trợ; không silent fallback sang hội thoại mới.
-Mock contract tests và kiểm tra hội thoại thật được ghi riêng. Không bịa resume flag.
+**Acceptance:** valid resume ID, missing ID, unsupported CLI version; no silent fallback to a new conversation.
+Mock contract tests and real conversation checks are recorded separately. Do not invent resume flags.
 
-### T09 — Preset giữ cấu hình đầy đủ [P2, phụ thuộc T02/T05/T18]
+### T09 — Presets keep the full configuration [P2, depends on T02/T05/T18]
 
-- [ ] Schema preset có slots/agent/model/provider reference/worktree choice và bố cục phù hợp.
-- [ ] Migration preset cũ chỉ có agent IDs, agent/provider thiếu và tên preset trùng được xử lý rõ ràng.
-- [ ] CLI tùy chọn được giữ khi hỗ trợ lưu preset; không làm mất command/label mà vẫn báo lưu thành công.
+- [ ] The preset schema has slots/agent/model/provider reference/worktree choice and a suitable layout.
+- [ ] Migration of old presets with only agent IDs, missing agents/providers and duplicate preset names are handled clearly.
+- [ ] Custom CLIs are kept when presets support them; do not lose the command/label while reporting a successful save.
 
-**Nghiệm thu:** save/load/relaunch lineup hỗn hợp và custom CLI tái tạo đúng cấu hình; không chứa secret;
-một agent thiếu không làm gán nhầm model/provider sang slot khác.
+**Acceptance:** save/load/relaunch of a mixed lineup and a custom CLI reproduces the configuration exactly; no secrets;
+one missing agent does not shift a model/provider onto another slot.
 
-### T10 — Cây file/preview theo đúng worktree [P2, phụ thuộc T06]
+### T10 — File tree/preview follows the right worktree [P2, depends on T06]
 
-- [ ] Có root/context rõ ràng: workspace gốc hay worktree của agent đang chọn; tên/branch/path cho người dùng nhận biết.
-- [ ] Đổi focus có thể đổi context file nhưng không đổi geometry terminal; tab file giữ root identity riêng.
-- [ ] Không gộp hai file trùng relative path ở hai worktree thành một tab sai nội dung.
+- [ ] A clear root/context: the base workspace or the selected agent's worktree; name/branch/path visible to the user.
+- [ ] Changing focus may change the file context but not terminal geometry; file tabs keep their own root identity.
+- [ ] Do not merge two files with the same relative path in two worktrees into one tab with the wrong content.
 
-**Nghiệm thu:** repo gốc và hai worktree có `src/foo.js` với ba nội dung khác nhau; cây file, preview/editor,
-Open/Reveal và file tab luôn trỏ đúng root. Root bị dọn phải hiển thị trạng thái mất nguồn, không đọc nhầm root khác.
+**Acceptance:** the base repo and two worktrees have `src/foo.js` with three different contents; the file tree, preview/editor,
+Open/Reveal and file tabs always point at the right root. A cleaned-up root shows a missing-source state and never reads another root by mistake.
 
-### T11 — Kéo file đúng ngữ cảnh và đường dẫn [P2, phụ thuộc T06/T10/T19]
+### T11 — Drag files with the right context and paths [P2, depends on T06/T10/T19]
 
-- [ ] Payload file có root/file identity; target xác định bằng session ID và cwd thực tế, không phải pane đang focus ngẫu nhiên.
-- [ ] File repo/worktree có đường dẫn tương ứng: ánh xạ sang đúng file trong target worktree, giữ cấu trúc `src/foo.js`.
-- [ ] Nếu bản nguồn khác hoặc target chưa có, không âm thầm overwrite hay tạo `foo (1)` ở gốc;
-  có hành vi rõ ràng cho việc tham chiếu file nguồn hoặc import attachment. External drop dùng staging có collision handling.
-- [ ] Dán bằng bracketed paste khi CLI hỗ trợ; không Enter, không tự chạy prompt/lệnh. Báo lỗi target đã exit/close trong lúc copy.
+- [ ] The file payload has root/file identity; the target is determined by session ID and actual cwd, not whichever pane happens to have focus.
+- [ ] Repo/worktree files with a corresponding path map to the right file in the target worktree, keeping the `src/foo.js` structure.
+- [ ] If the source differs or the target does not have it yet, do not silently overwrite or create `foo (1)` at the root;
+  have clear behaviour for referencing the source file or importing an attachment. External drops use staging with collision handling.
+- [ ] Paste with bracketed paste when the CLI supports it; no Enter, never auto-run a prompt/command. Report a target that exited/closed during the copy.
 
-**Nghiệm thu:** tree/tab/Explorer drops; file có dấu, khoảng trắng, dấu nháy, nhiều file và hai root;
-target worktree đúng file/nội dung. Chỉ target nhận input; không newline-submit; không overwrite dữ liệu đang sửa.
-Test target đóng trong lúc import, retry không tạo bản copy vô hạn, lỗi từng file được báo đầy đủ.
+**Acceptance:** tree/tab/Explorer drops; files with accents, spaces, quotes, multiple files and two roots;
+the target worktree gets the right file/content. Only the target receives input; no newline-submit; no overwriting data being edited.
+Test the target closing during import, retries not creating endless copies, and per-file errors being fully reported.
 
-### T12 — Capability/compatibility matrix CLI [P2]
+### T12 — CLI capability/compatibility matrix [P2]
 
-**Code:** agents.js, launch_page.js, command_check.js và launch path ở main/mobile.
+**Code:** agents.js, launch_page.js, command_check.js and the launch path in main/mobile.
 
-- [ ] Lập bảng đủ 14 lựa chọn hiện có + custom: executable, version/prerequisites, launch, model, provider,
-  resume và tình trạng hỗ trợ thực tế; mỗi adapter dùng help/tài liệu chính thức làm nguồn.
-- [ ] Chặn cấu hình provider/model không tương thích; không giả định mọi CLI nhận `<AGENT>_MODEL` hoặc OPENAI_*.
-- [ ] Phân biệt installed, prerequisite missing, auth needed, unsupported capability, unverified và ready.
-- [ ] Shared catalog/capabilities giữa desktop/mobile không bị lệch.
+- [ ] Build a table of all 14 current options + custom: executable, version/prerequisites, launch, model, provider,
+  resume and actual support status; each adapter uses help/official docs as its source.
+- [ ] Block incompatible provider/model configurations; do not assume every CLI accepts `<AGENT>_MODEL` or OPENAI_*.
+- [ ] Distinguish installed, prerequisite missing, auth needed, unsupported capability, unverified and ready.
+- [ ] The shared catalog/capabilities between desktop/mobile must not drift.
 
-**Nghiệm thu:** contract tests cho từng mapping, executable thiếu/CLI version cũ/config không hợp lệ;
-ma trận ghi rõ CLI thật đã launch, provider thật đã chat hay chỉ mock. Không coi 14 card là 14 agent đã xác thực.
+**Acceptance:** contract tests for each mapping, missing executable/old CLI version/invalid config;
+the matrix states clearly which real CLIs were launched, which real providers were chatted with, or mock only. 14 cards are not 14 verified agents.
 
-## Giai đoạn C — file và hiệu năng
+## Phase C — files and performance
 
-### T13 — Preview/editor không hiện nội dung cũ [P1, phối hợp T28a]
+### T13 — Preview/editor never shows stale content [P1, coordinated with T28a]
 
-- [ ] Bấm mở lại tab kiểm tra thay đổi trên đĩa; tự cập nhật preview khi file đổi.
-- [ ] Editor có buffer chưa lưu: phát hiện external change/conflict, không tự ghi đè hay mất buffer.
-- [ ] Xử lý rename/delete/file quá lớn, selection/scroll và race response cũ về sau response mới.
+- [ ] Reopening a tab checks for changes on disk; the preview updates automatically when the file changes.
+- [ ] An editor with an unsaved buffer: detect external changes/conflicts, never auto-overwrite or lose the buffer.
+- [ ] Handle rename/delete/files too large, selection/scroll and old responses racing after newer ones.
 
-**Nghiệm thu:** thay file bằng agent giả lập, mở lại/đổi tab; nội dung mới xuất hiện.
-External edit + unsaved edit được giữ đủ dữ liệu để xử lý conflict; đọc chậm không hiển thị kết quả của root/tab cũ.
+**Acceptance:** replace a file with a simulated agent, reopen/switch tabs; the new content appears.
+External edit + unsaved edit keeps enough data to resolve the conflict; slow reads never show the result of an old root/tab.
 
-### T14 — Đồng bộ cây file [P2, phụ thuộc T10]
+### T14 — Sync the file tree [P2, depends on T10]
 
-- [ ] Watch/invalidate theo root bằng cơ chế có debounce/batching và dispose; loại trừ vòng lặp/node_modules/.git nặng theo chính sách rõ ràng.
-- [ ] Theo dõi create/modify/rename/delete từ agent hoặc ứng dụng ngoài; root đổi/mất không rò watcher.
+- [ ] Watch/invalidate per root with debouncing/batching and disposal; exclude loops/heavy node_modules/.git by a clear policy.
+- [ ] Track create/modify/rename/delete from agents or external apps; a changed/missing root does not leak watchers.
 
-**Nghiệm thu:** các event file xuất hiện đúng sau debounce, đổi workspace/root lặp lại không nhân watcher;
-burst nhiều file không render storm và input/output terminal tiếp tục hoạt động.
+**Acceptance:** file events show up correctly after debounce, repeatedly switching workspace/root does not multiply watchers;
+a burst of many files causes no render storm and terminal input/output keeps working.
 
-### T15 — Refresh giữ ngữ cảnh duyệt file [P2, phụ thuộc T14]
+### T15 — Refresh keeps the browsing context [P2, depends on T14]
 
-- [ ] Giữ expanded folders, selection, scroll và keyboard focus khi refresh/import/watch update.
-- [ ] File/folder biến mất được loại đúng, không để cache mồ côi hoặc collapse cả cây.
+- [ ] Keep expanded folders, selection, scroll and keyboard focus on refresh/import/watch updates.
+- [ ] Vanished files/folders are removed correctly, without orphaned cache or collapsing the whole tree.
 
-**Nghiệm thu:** mở ba tầng thư mục rồi refresh/import và rename/delete một nhánh;
-các nhánh còn lại giữ trạng thái, đúng selection và không nhảy scroll về đầu.
+**Acceptance:** open three folder levels then refresh/import and rename/delete one branch;
+the other branches keep their state, selection is correct and scroll does not jump to the top.
 
-### T16 — Import không bỏ mục âm thầm [P2]
+### T16 — Import never drops items silently [P2]
 
-- [ ] Không slice quá giới hạn rồi trả thành công một phần như toàn bộ đã được xử lý.
-- [ ] Chọn reject toàn batch trước khi copy hoặc chia batch có progress; mọi mục phải có kết quả/explicit rejection.
-- [ ] Collision, file lỗi và cancel được ghi rõ; copy thành công một phần được giữ nhất quán.
+- [ ] Do not slice past the limit and then report partial success as if everything was processed.
+- [ ] Either reject the whole batch before copying or split into batches with progress; every item must have a result/explicit rejection.
+- [ ] Collisions, failed files and cancel are recorded clearly; partially successful copies stay consistent.
 
-**Nghiệm thu:** 0/1/100/101/250 mục; tổng accepted+failed+skipped+cancelled bằng tổng yêu cầu;
-UI và backend thống nhất số lượng, không overwrite file trùng.
+**Acceptance:** 0/1/100/101/250 items; accepted+failed+skipped+cancelled equals the total requested;
+UI and backend agree on the counts, duplicate files are not overwritten.
 
-### T17 — IO file nặng không chặn main; có progress/cancel [P2]
+### T17 — Heavy file IO does not block main; progress/cancel [P2]
 
-- [ ] Chuyển tác vụ list/read/copy nặng sang async/worker có concurrency/backpressure phù hợp.
-- [ ] Progress/cancel/cleanup cho import; giới hạn size/khối lượng hợp lý, không đọc toàn file lớn chỉ để xác định preview.
-- [ ] Không dọn file cũ/ngoài root khi cancel; file tạm có ownership rõ ràng.
+- [ ] Move heavy list/read/copy work to async/workers with suitable concurrency/backpressure.
+- [ ] Progress/cancel/cleanup for import; reasonable size/volume limits, never read an entire large file just to decide on a preview.
+- [ ] Never clean up old/out-of-root files on cancel; temp files have clear ownership.
 
-**Nghiệm thu:** fixture nhiều file và file lớn có kích thước/thời lượng được ghi lại;
-terminal vẫn nhận input/output, IPC/mobile không bị treo, cancel dừng tác vụ và không để orphan task.
-Đo thời gian phản hồi/event-loop thay vì chỉ nói cảm giác mượt.
+**Acceptance:** fixtures with many files and large files, with sizes/durations recorded;
+terminals still get input/output, IPC/mobile do not hang, cancel stops the task and leaves no orphan task.
+Measure response time/event loop instead of just saying it feels smooth.
 
-## Giai đoạn D — dữ liệu, ranh giới file, mobile
+## Phase D — data, file boundaries, mobile
 
-### T18 — Bảo vệ API key [P1 trước public release, phụ thuộc T05 migration]
+### T18 — Protect API keys [P1 before public release, depends on T05 migration]
 
-- [ ] Dùng kho bí mật OS/Electron safeStorage với kiểm tra availability/backend; không fallback lưu thuần khi encryption không dùng được.
-- [ ] State/preset/session/UI chỉ giữ reference và metadata; renderer không nhận lại API key đầy đủ qua list sau khi lưu.
-- [ ] Migration providers.json cũ an toàn, atomic, có recovery phù hợp; không tạo backup/log mới chứa plaintext.
-- [ ] Lỗi decrypt/migration được hiển thị có thể xử lý; không tự xóa credential hay dùng sai provider.
+- [ ] Use the OS secret store/Electron safeStorage with availability/backend checks; no plaintext fallback when encryption is unavailable.
+- [ ] State/presets/sessions/UI only keep references and metadata; the renderer never gets the full API key back via list after saving.
+- [ ] Migrate old providers.json safely and atomically with suitable recovery; do not create new backups/logs containing plaintext.
+- [ ] Decrypt/migration errors are shown in an actionable way; never auto-delete credentials or use the wrong provider.
 
-**Nghiệm thu:** fixture token không xuất hiện thuần trong JSON/log/screenshot/artifact; thử unavailable/decrypt failure,
-migration bị ngắt, remove/update provider và relaunch. Dùng fake credential, không đọc key profile thật.
+**Acceptance:** the fixture token never appears in plain text in JSON/logs/screenshots/artifacts; try unavailable/decrypt failure,
+interrupted migration, remove/update provider and relaunch. Use fake credentials, never read real profile keys.
 
-### T19 — Chặn junction/symlink thoát root [P2]
+### T19 — Block junctions/symlinks escaping the root [P2]
 
-- [ ] Xác minh canonical/real path của root và target; file và directory traversal phải áp dụng cùng hợp đồng.
-- [ ] Kiểm tra root do main xác định, path traversal, sibling prefix, Windows drive/UNC và liên kết ngoài root.
-- [ ] External import là operation riêng với nguồn do người dùng chọn; không làm hỏng drag-drop ngoài workspace hợp lệ.
-- [ ] Không trả file URL/Open/Reveal/convert document cho target ngoài allowed root qua liên kết.
-- [ ] Editor/save mới ở T28a áp dụng cùng boundary cho file và parent directory, không tạo đường ghi ra ngoài qua junction.
+- [ ] Verify the canonical/real path of root and target; file and directory traversal follow the same contract.
+- [ ] Check main-determined roots, path traversal, sibling prefixes, Windows drive/UNC and links outside the root.
+- [ ] External import is a separate operation with a user-chosen source; do not break valid drag-drop from outside the workspace.
+- [ ] Never return a file URL/Open/Reveal/document conversion for targets outside the allowed root via links.
+- [ ] The new editor/save in T28a applies the same boundary to files and parent directories, with no write path out through junctions.
 
-**Nghiệm thu:** test junction/symlink ngoài root của audit bị từ chối; symlink trong root hoạt động theo chính sách;
-list/read/preview/document/Open/Reveal/import không lách boundary. Các root workspace/worktree hợp lệ vẫn dùng được.
+**Acceptance:** the audit's out-of-root junction/symlink test is rejected; in-root symlinks work per policy;
+list/read/preview/document/Open/Reveal/import cannot bypass the boundary. Valid workspace/worktree roots still work.
 
-### T20 — Một chủ sở hữu kích thước PTY [P2]
+### T20 — One owner of the PTY size [P2]
 
-- [ ] Định nghĩa size owner desktop khi pane đang hiển thị; phone được takeover khi thích hợp bằng chính sách rõ ràng.
-- [ ] Gửi/đồng bộ terminal dimensions cho viewer còn lại; tránh resize ping-pong, resize vào PTY đã chết và làm thay layout chỉ vì đổi focus.
+- [ ] Define the desktop as size owner while the pane is visible; the phone may take over when appropriate under a clear policy.
+- [ ] Send/sync terminal dimensions to the remaining viewers; avoid resize ping-pong, resizing a dead PTY, and changing layout just because focus changed.
 
-**Nghiệm thu:** desktop + ít nhất hai WebSocket clients có viewport khác nhau;
-attach/detach/background/rotate/reconnect không làm size dao động. Test integration mô phỏng và hai thiết bị thật ghi riêng.
+**Acceptance:** desktop + at least two WebSocket clients with different viewports;
+attach/detach/background/rotate/reconnect do not make the size oscillate. Simulated integration tests and two real devices recorded separately.
 
-### T21 — Rate limit không khóa chung người dùng hợp lệ [P2]
+### T21 — Rate limiting does not lock out valid users collectively [P2]
 
-- [ ] Giới hạn theo nguồn/kết nối với cleanup/bounds; lỗi token từ nguồn A không khóa nguồn B có token đúng.
-- [ ] Chỉ tin proxy headers khi có proxy được cấu hình rõ; giữ timing-safe token check, token rotation và kiểm tra mọi request/upgrade.
-- [ ] Tránh cấu trúc rate-limit tăng bộ nhớ vô hạn hoặc cho qua brute-force vì thay header.
+- [ ] Limit per source/connection with cleanup/bounds; wrong tokens from source A do not lock out source B with the right token.
+- [ ] Only trust proxy headers when a proxy is explicitly configured; keep the timing-safe token check, token rotation and checks on every request/upgrade.
+- [ ] Avoid rate-limit structures with unbounded memory growth or that let brute force through by changing headers.
 
-**Nghiệm thu:** nguồn A nhiều token sai, nguồn B hợp lệ vẫn HTTP/WS được;
-A vẫn bị hạn chế; token cũ sau rotate bị từ chối; expiry/cleanup và giới hạn nguồn được test.
+**Acceptance:** source A with many wrong tokens, valid source B can still use HTTP/WS;
+A stays limited; old tokens after rotation are rejected; expiry/cleanup and source limits are tested.
 
-### T22 — Phạm vi mobile LAN/VPN rõ ràng [giới hạn vận hành]
+### T22 — Clear mobile LAN/VPN scope [operational limit]
 
-- [ ] Giữ default an toàn và công bố đúng phạm vi LAN/VPN; UI phân biệt loopback với lắng nghe LAN.
-- [ ] Không tuyên bố đã có remote internet/TLS/identity nếu chưa làm. Tránh log token URL, thêm no-store/no-referrer phù hợp.
-- [ ] Kiểm tra auth cho static/WS, bind changes, token rotation, reconnect và tắt server; không mở port router/firewall hay đổi OS settings hộ người dùng.
+- [ ] Keep safe defaults and state the LAN/VPN scope accurately; the UI distinguishes loopback from listening on the LAN.
+- [ ] Do not claim remote internet/TLS/identity if not implemented. Avoid logging the token URL, add no-store/no-referrer as appropriate.
+- [ ] Check auth for static/WS, bind changes, token rotation, reconnect and server shutdown; do not open router/firewall ports or change OS settings for the user.
 
-**Nghiệm thu:** topology test chỉ rõ kết nối nào truy cập được, token sai/thiếu không đọc/điều khiển terminal;
-tắt server hủy kết nối và không còn listener. Ghi LAN/VPN verified hay NOT_RUN; không cần triển khai dịch vụ cloud trong nhiệm vụ này.
+**Acceptance:** topology tests show exactly which connections can reach it; wrong/missing tokens cannot read/control terminals;
+stopping the server drops connections and leaves no listener. Record LAN/VPN as verified or NOT_RUN; no cloud service needs to be built in this task.
 
-## Giai đoạn E — lifecycle và nguồn phát hành
+## Phase E — lifecycle and release source
 
-### T23 — Điều tra timeout/ConPTY teardown [P1]
+### T23 — Investigate the timeout/ConPTY teardown [P1]
 
-- [ ] Instrument từng bước create/exit/kill/reload/cleanup; tái hiện timeout sau 25 checks, xác định test hay sản phẩm/native.
-- [ ] Chờ lifecycle đúng thứ tự, cancellation/race-safe, không resize/write vào session đang đóng; cleanup idempotent.
-- [ ] Không sửa bằng tăng timeout vô hạn, suppress AttachConsole error hoặc kill toàn bộ electron/node của máy.
-- [ ] Child helper, hooks, socket, timer, watcher và worktree phải được dispose theo ownership.
+- [ ] Instrument each create/exit/kill/reload/cleanup step; reproduce the timeout after 25 checks, determine whether it is the test or the product/native side.
+- [ ] Wait on the lifecycle in the right order, cancellation/race-safe, no resize/write into a closing session; idempotent cleanup.
+- [ ] Do not fix it by raising timeouts indefinitely, suppressing the AttachConsole error or killing every electron/node process on the machine.
+- [ ] Child helpers, hooks, sockets, timers, watchers and worktrees must be disposed according to ownership.
 
-**Nghiệm thu:** tối thiểu 20 chu kỳ mở/đóng/restart/reload với nhiều pane và một lượt soak ít nhất 30 phút;
-ghi resource/process count trước/sau, tất cả test processes thoát trong deadline đã công bố.
-Native Windows test bắt buộc để đánh dấu FIXED_VERIFIED; mock không thay thế được. Không còn timeout/exception không giải thích.
+**Acceptance:** at least 20 open/close/restart/reload cycles with multiple panes and one soak run of at least 30 minutes;
+record resource/process counts before/after, all test processes exit within the published deadline.
+A native Windows test is required to mark FIXED_VERIFIED; mocks cannot replace it. No unexplained timeouts/exceptions remain.
 
-### T24 — Một nguồn build, không phân phối payload cũ [P1 trước phát hành]
+### T24 — Single build source, never ship a stale payload [P1 before release]
 
-**Code:** `package.json`, `scripts/build_app.mjs`, installer và script package mới nếu cần.
+**Code:** `package.json`, `scripts/build_app.mjs`, the installer and a new package script if needed.
 
-- [ ] Một lệnh điều phối build mới → verify source/version/hash → stage payload → package local.
-- [ ] Không lấy app/ cũ chỉ vì AgentSense.exe tồn tại; thêm build provenance/manifest gắn commit và version.
-- [ ] Package loại trừ profile/token/log riêng tư, node_modules dev ngoài nhu cầu và fixture/audit runtime.
+- [ ] One command orchestrates a fresh build → verify source/version/hash → stage the payload → local package.
+- [ ] Do not take an old app/ just because AgentSense.exe exists; add build provenance/a manifest tied to commit and version.
+- [ ] The package excludes private profiles/tokens/logs, dev node_modules beyond need and runtime fixtures/audits.
 
-**Nghiệm thu:** tạo stale app/ cố ý rồi chạy pipeline; artifact ra đúng build mới hoặc fail rõ;
-source/dist/payload/manifest khớp phiên bản và file quan trọng. Không upload artifact lên remote.
+**Acceptance:** deliberately create a stale app/ then run the pipeline; the artifact is the new build or fails clearly;
+source/dist/payload/manifest match on version and key files. Do not upload artifacts to the remote.
 
-### T25 — Nâng cấp/đóng gói có rollback [P2 trước stable]
+### T25 — Upgrade/packaging with rollback [P2 before stable]
 
-- [ ] Stage + verify bản mới trước khi thay bản đang chạy; backup/swap/restore có giới hạn ownership.
-- [ ] Từ chối khi app đang chạy; mọi recursive delete/move xác minh absolute path trong install/staging root.
-- [ ] Không chạm dữ liệu `%APPDATA%\\AgentSense`; rollback binary và schema/data compatibility được nêu rõ.
+- [ ] Stage + verify the new version before replacing the running one; backup/swap/restore within ownership limits.
+- [ ] Refuse while the app is running; every recursive delete/move verifies the absolute path is inside the install/staging root.
+- [ ] Never touch `%APPDATA%\\AgentSense` data; binary rollback and schema/data compatibility are stated clearly.
 
-**Nghiệm thu:** cài mới, A→B upgrade, uninstall; inject lỗi giữa copy, thiếu dung lượng/quyền/lỗi verify;
-bản cũ còn chạy hoặc rollback được, dữ liệu mẫu nguyên vẹn. Chỉ thử trong install/shortcut/profile tạm.
+**Acceptance:** fresh install, A→B upgrade, uninstall; inject failures mid-copy, low disk/permissions/verify failure;
+the old version still runs or can be rolled back, sample data intact. Only test with temporary install/shortcut/profile.
 
-### T26 — Hạ tầng version/phát hành; chỉ chuẩn bị local [đánh giá từng mục con]
+### T26 — Version/release infrastructure; local preparation only [assessed per subitem]
 
-- [ ] **T26a Version/provenance:** xác định quy tắc prerelease/stable, hiển thị version/build trong UI, CHANGELOG và manifest/hash local.
-- [ ] **T26b CI:** chuẩn bị workflow lint/check/regression/native Windows/build/artifact validation; kiểm tra YAML/script local.
-  Chưa chạy remote thì ghi REMOTE_CI=NOT_RUN; không push để thử workflow.
-  CI kiểm tra dùng quyền tối thiểu; không thêm publish-on-push hay cơ chế tự push/merge/release bỏ qua gate review.
-- [ ] **T26c Download/release:** soạn release notes, checksum, tên artifact và hướng dẫn tải/cài/nâng cấp/gỡ.
-  Repo hiện private: ghi phương án phân phối chờ chủ repo quyết định; không đổi visibility hay tạo release.
-- [ ] **T26d Signing:** chuẩn bị tích hợp signing có kiểm tra kết quả; không bịa cert/chữ ký.
-  Thiếu certificate/secrets: ghi SIGNING=BLOCKED, không ghi exe đã ký.
-- [ ] **T26e Updates:** chuẩn bị thiết kế/code cập nhật có kiểm tra integrity/signature và rollback,
-  hoặc giữ manual update được công bố rõ cho beta. Automatic update production chưa test thì để NOT_RUN/BLOCKED,
-  không coi tài liệu manual là đã triển khai auto-updater.
-- [ ] **T26f Platform:** chỉ công bố Windows x64 khi đã kiểm tra; macOS/Linux không nằm trong lời hứa hỗ trợ của lượt này.
+- [ ] **T26a Version/provenance:** define prerelease/stable rules, show version/build in the UI, CHANGELOG and a local manifest/hash.
+- [ ] **T26b CI:** prepare a workflow for lint/check/regression/native Windows/build/artifact validation; check the YAML/scripts locally.
+  If not run remotely, record REMOTE_CI=NOT_RUN; do not push to try the workflow.
+  CI checks use minimal permissions; no publish-on-push or mechanisms that auto push/merge/release bypassing the review gate.
+- [ ] **T26c Download/release:** draft release notes, checksums, artifact names and download/install/upgrade/uninstall instructions.
+  The repo is currently private: record the distribution options pending the repo owner's decision; do not change visibility or create a release.
+- [ ] **T26d Signing:** prepare signing integration with result checks; do not invent certs/signatures.
+  Missing certificate/secrets: record SIGNING=BLOCKED, do not record the exe as signed.
+- [ ] **T26e Updates:** prepare an update design/code with integrity/signature checks and rollback,
+  or keep a clearly published manual update for the beta. Untested production automatic updates stay NOT_RUN/BLOCKED;
+  manual-update docs are not an implemented auto-updater.
+- [ ] **T26f Platform:** only announce Windows x64 once tested; macOS/Linux are not part of this round's support promise.
 
-**Nghiệm thu:** mọi mục con có trạng thái riêng và bằng chứng. Không cho T26=FIXED_VERIFIED nếu một yêu cầu bắt buộc
-vẫn bị chặn. Mục có thể hoàn thành bằng xác lập phạm vi phải ghi APPROACH/SCOPE riêng, không đổi tên thiếu tính năng thành PASS.
+**Acceptance:** every subitem has its own status and evidence. T26 cannot be FIXED_VERIFIED if a mandatory requirement
+is still blocked. Items that can be completed by defining scope must record APPROACH/SCOPE separately; do not rename a missing feature as PASS.
 
-### T27 — Sửa dev script trên Windows [P3]
+### T27 — Fix the dev script on Windows [P3]
 
-- [ ] Dùng runner/env cross-platform phù hợp; giữ devtools chỉ bật ở dev, không rò vào packaged production.
+- [ ] Use a suitable cross-platform runner/env; keep devtools enabled only in dev, never leaking into packaged production.
 
-**Nghiệm thu:** npm run dev khởi động trên Windows, npm start và packaged exe vẫn bình thường;
-test không cần mở shell/cửa sổ không liên quan hoặc tác động app/profile đang dùng.
+**Acceptance:** npm run dev starts on Windows, npm start and the packaged exe still work normally;
+tests do not need to open unrelated shells/windows or affect the app/profile in use.
 
-### T28 — Editor/quick-open và lấp khoảng trống kiểm chứng [đánh giá từng mục con]
+### T28 — Editor/quick-open and closing verification gaps [assessed per subitem]
 
-- [ ] **T28a Editor/autosave:** text editor trong vùng file chung, file tab đúng root, debounce autosave và trạng thái saved/saving/error.
-  Dùng revision/conflict check; không overwrite external changes khi có buffer bẩn; giữ undo/buffer khi lỗi.
-  Giữ line endings/encoding được hỗ trợ, không tự format toàn file hoặc làm mất ký tự/BOM mà không thông báo.
-  Binary/large/read-only file tiếp tục preview hoặc báo rõ. Không mặc định thêm framework lớn nếu giải pháp hiện có đủ.
-- [ ] **T28b Quick-open:** Ctrl+P tìm file theo root/context, gồm dotfiles; có giới hạn/ignore policy,
-  keyboard navigation và cancel; không scan toàn ổ đĩa hoặc chặn main process.
-- [ ] **T28c Acceptance tests:** bỏ expectation Tabs/zoom ẩn pane là đúng; thêm focus-only bounds tests,
-  layout persistence, file-group tabs, conflict-safe save và các regression T01–T27.
-- [ ] **T28d Clean-machine/install:** bản đóng gói trên Windows sạch/tài khoản thường, thiếu Git/CLI/Node khi phù hợp,
-  path khoảng trắng/tiếng Việt, upgrade giữa hai artifact version thực tế và rollback.
-- [ ] **T28e Real integrations:** ma trận CLI + auth/provider thật, LAN/VPN/phone, sleep/wake,
-  mất/đổi mạng, crash/recovery và multi-agent soak. Không có môi trường thì ghi NOT_RUN/BLOCKED và cách chủ repo kiểm tra.
+- [ ] **T28a Editor/autosave:** text editor in the shared file area, file tabs with the right root, debounced autosave and saved/saving/error states.
+  Use revision/conflict checks; never overwrite external changes while the buffer is dirty; keep undo/buffer on errors.
+  Preserve supported line endings/encodings, never auto-format the whole file or lose characters/BOM without notice.
+  Binary/large/read-only files keep the preview or report clearly. Do not add a large framework by default if the existing solution is enough.
+- [ ] **T28b Quick-open:** Ctrl+P finds files by root/context, including dotfiles; with limits/ignore policy,
+  keyboard navigation and cancel; never scan the whole drive or block the main process.
+- [ ] **T28c Acceptance tests:** drop the expectation that Tabs/zoom hiding panes is correct; add focus-only bounds tests,
+  layout persistence, file-group tabs, conflict-safe save and the T01–T27 regressions.
+- [ ] **T28d Clean-machine/install:** packaged build on clean Windows/a standard account, missing Git/CLI/Node where relevant,
+  paths with spaces/Vietnamese characters, upgrade between two real artifact versions and rollback.
+- [ ] **T28e Real integrations:** matrix of real CLIs + auth/providers, LAN/VPN/phone, sleep/wake,
+  network loss/change, crash/recovery and multi-agent soak. Without the environment, record NOT_RUN/BLOCKED and how the repo owner can test it.
 
-**Nghiệm thu:** test UI thật và dữ liệu fixture cho editor/conflict/quick-open; native/physical/real-provider
-tests có ngày, phiên bản, môi trường, thời lượng và kết quả. Từng mục con có trạng thái; thiếu kiểm chứng không được tự tick hoàn tất.
+**Acceptance:** real UI tests and fixture data for editor/conflict/quick-open; native/physical/real-provider
+tests with date, version, environment, duration and result. Each subitem has a status; missing verification must not be ticked as complete.
 
-## Giai đoạn F — bàn giao để Codex review
+## Phase F — handoff for Codex review
 
-- [ ] Mỗi T01–T28 và từng T26/T28 subtask có code/evidence/status; không còn hàng trống hoặc nhãn “done” không có test.
-- [ ] Chạy các script còn áp dụng: `npm run smoke:workbench`, `npm run smoke:mobile`, syntax/lint/check mới,
-  `npm run dev`, build/package local và install/upgrade/uninstall sandbox. Ghi rõ script bị thay thế và lý do.
-- [ ] Git diff không chứa secret, fixture cá nhân, dist/app binaries hoặc audit output lớn; giữ lockfile nếu dependencies thay đổi.
-- [ ] Báo cáo branch/base/head/local commits, tóm tắt thay đổi, known issues, test log/ảnh và bước tái hiện cho reviewer.
-- [ ] Ghi `HANDOFF_STATE=READY_FOR_CODEX_REVIEW`; trạng thái public release đánh giá riêng, không tự đặt APPROVED.
-- [ ] Không push, không merge, không PR/tag/release/deploy. Dừng chờ reviewer.
+- [ ] Every T01–T28 and each T26/T28 subtask has code/evidence/status; no empty rows or "done" labels without tests.
+- [ ] Run the applicable scripts: `npm run smoke:workbench`, `npm run smoke:mobile`, new syntax/lint/check,
+  `npm run dev`, local build/package and sandbox install/upgrade/uninstall. State which scripts were replaced and why.
+- [ ] The git diff contains no secrets, personal fixtures, dist/app binaries or large audit output; keep the lockfile if dependencies changed.
+- [ ] Report branch/base/head/local commits, a summary of changes, known issues, test logs/screenshots and reproduction steps for the reviewer.
+- [ ] Record `HANDOFF_STATE=READY_FOR_CODEX_REVIEW`; public release status is assessed separately, never self-set to APPROVED.
+- [ ] No push, no merge, no PR/tag/release/deploy. Stop and wait for the reviewer.

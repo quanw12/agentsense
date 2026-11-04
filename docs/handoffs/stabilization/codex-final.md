@@ -1,34 +1,34 @@
-# Codex — sửa cuối và xác nhận trước push
+# Codex — final fixes and confirmation before push
 
-Ngày 03/11/2026, Asia/Saigon. Branch `fix/workbench-stability`, bắt đầu từ `a93c76d4f5b785044f470196379e083929d7649a`. Người dùng đã yêu cầu Codex tự sửa phần còn lỗi, commit và push; quyền tạo PR từ yêu cầu trước vẫn còn hiệu lực. Không merge hoặc phát hành.
+2026-11-03, Asia/Saigon. Branch `fix/workbench-stability`, starting from `a93c76d4f5b785044f470196379e083929d7649a`. The user asked Codex to fix the remaining bugs itself, commit and push; the PR permission from the earlier request still applies. No merge or release.
 
-Commit runtime cuối: `332b6ed968cc9e2e91adb021ad035fba3dafede5`. Commit build/CI/evidence theo sau không thay runtime đã kiểm chứng.
+Final runtime commit: `332b6ed968cc9e2e91adb021ad035fba3dafede5`. The build/CI/evidence commits after it do not change the verified runtime.
 
-**VERIFIED_FOR_PR trong phạm vi sửa/workflows đã kiểm chứng dưới đây. PUBLIC_RELEASE_READINESS vẫn NOT_READY.** Các hàng PARTIAL/NOT_RUN của ma trận ban đầu không tự trở thành VERIFIED.
+**VERIFIED_FOR_PR within the fixes/workflows verified below. PUBLIC_RELEASE_READINESS is still NOT_READY.** PARTIAL/NOT_RUN rows of the original matrix do not automatically become VERIFIED.
 
-## Thay đổi cuối
+## Final changes
 
-- Xác nhận race của global `ptyHandles` trong native node-pty 1.1.0 vẫn gây crash dù đã vá JS. Pin bản upstream **1.2.0-beta.17** chứa mutex fix [#922](https://github.com/microsoft/node-pty/pull/922), được mô tả ở [issue #921](https://github.com/microsoft/node-pty/issues/921) và [release notes](https://github.com/microsoft/node-pty/releases/tag/v1.2.0-beta.13). Đây là dependency prerelease được pin chính xác, không tuyên bố stable. Không sửa binary/native code thủ công trong node_modules.
-- Giữ cơ chế đợi watcher/worker, xử lý kết nối async của node-pty mới, không trả terminal ready với PID 0. Cleanup launch thất bại; các lệnh close đồng thời dùng chung promise chứa cả native cleanup và worktree handling.
-- Shutdown chặn admission trước, đợi các launch đã nhận rồi dọn hết terminal. Main đồng thời dừng mobile/hook listeners và đợi cleanup trước khi quit. Production lifecycle dùng trace buffer thay cho in PID liên tục ra console.
-- Main resolve Claude resume ID từ saved record khi Restart không gửi ID; mock executable đã kiểm argv `--resume <saved-id>`, không dùng Claude/auth thật.
-- Editor serialize theo CRLF của file gốc và giữ BOM. Mixed/legacy line endings hoặc byte không phải UTF-8 chỉ đọc với thông báo; không âm thầm chuẩn hóa dữ liệu. Test UI thật thay vì chỉ test backend với chuỗi CRLF có sẵn.
-- `npm run build:app` luôn chạy electron-builder trước, đối chiếu source/JS/native files và version dependency với bản đã test, ghi hash/version/dirty flag rồi stage/swap. Dependency package metadata được builder normalize nên kiểm version trước rồi hash metadata đã đóng gói; debug/linker artifacts không phải runtime không đưa vào yêu cầu so sánh.
-- Installer kiểm BUILD.json, exe và resource checksums trước swap; từ chối cả APPDATA root, không recursive-remove thư mục mới dự kiến rỗng. Sandbox upgrade hỏng giữ nguyên bản cài cũ.
-- CI pull_request quyền contents:read chạy Node/PTY/editor regressions, repeated native suites, build và sandbox installer. Chưa coi remote CI là đã chạy trước push/PR.
+- Confirmed that the global `ptyHandles` race in native node-pty 1.1.0 still crashes despite the JS patch. Pinned upstream **1.2.0-beta.17** containing the mutex fix [#922](https://github.com/microsoft/node-pty/pull/922), described in [issue #921](https://github.com/microsoft/node-pty/issues/921) and the [release notes](https://github.com/microsoft/node-pty/releases/tag/v1.2.0-beta.13). This is an exactly pinned prerelease dependency, not claimed as stable. No manual binary/native code edits in node_modules.
+- Kept waiting on the watcher/worker, handled the new node-pty async connection, never report a terminal ready with PID 0. Failed launches are cleaned up; concurrent close calls share one promise covering both native cleanup and worktree handling.
+- Shutdown blocks admission first, waits for accepted launches, then cleans up every terminal. Main also stops the mobile/hook listeners and waits for cleanup before quitting. The production lifecycle uses a trace buffer instead of printing PIDs to the console continuously.
+- Main resolves the Claude resume ID from the saved record when Restart sends no ID; a mock executable checked argv `--resume <saved-id>`, without real Claude/auth.
+- The editor serializes using the original file's CRLF and keeps the BOM. Mixed/legacy line endings or non-UTF-8 bytes open read-only with a notice; data is never silently normalized. Tested through the real UI instead of only the backend with a ready-made CRLF string.
+- `npm run build:app` always runs electron-builder first, compares source/JS/native files and dependency versions with the tested build, records hash/version/dirty flag, then stages/swaps. Dependency package metadata is normalized by the builder, so versions are checked first and the packaged metadata is hashed; non-runtime debug/linker artifacts are not part of the comparison.
+- The installer checks BUILD.json, the exe and resource checksums before swapping; it refuses the APPDATA root too, and does not recursively remove a new folder expected to be empty. A broken sandbox upgrade leaves the old installation intact.
+- pull_request CI with contents:read runs Node/PTY/editor regressions, repeated native suites, build and the sandbox installer. Remote CI is not considered run before the push/PR.
 
-## Kiểm chứng
+## Verification
 
-Môi trường Windows x64, Node launcher v26.13.0, Electron 44.9.0, node-pty 1.2.0-beta.17. CI dùng Node 24. Tất cả fixture/profile/repo/worktree/shortcut nằm trong vùng tạm; không sửa profile hay transcript thật.
+Environment: Windows x64, Node launcher v26.13.0, Electron 44.9.0, node-pty 1.2.0-beta.17. CI uses Node 24. All fixtures/profiles/repos/worktrees/shortcuts live in temporary locations; no real profiles or transcripts were changed.
 
-| Kiểm tra | Kết quả |
+| Check | Result |
 | --- | --- |
 | `npm run check` | 27 PASS, exit 0 |
-| R1–R6 | PASS; R1 phải đợi save hoàn tất và so toàn bộ nội dung, R2 phải thật sự ở trạng thái conflict |
-| R7/R8, R9, R10 | PASS; Discard không có stale write, conflict chặn close, normal close flush file |
-| `npm run check:pty` | PASS: bốn final-output cases, bốn natural exits đồng thời, resume argv mock, concurrent close, child process cleanup, shutdown admission/in-flight launch |
-| `scripts/check_editor_format.js` | PASS: UI autosave giữ BOM/CRLF, mixed lines và invalid UTF-8 read-only/byte-identical |
-| `npm run check:stability` | **12/12 PASS**: 4 workbench + 4 mobile + 4 native main.js product quit, tất cả process exit 0, không timeout/orphan |
+| R1–R6 | PASS; R1 must wait for the save to finish and compare the full content, R2 must actually be in the conflict state |
+| R7/R8, R9, R10 | PASS; Discard has no stale write, a conflict blocks close, normal close flushes the file |
+| `npm run check:pty` | PASS: four final-output cases, four concurrent natural exits, resume argv mock, concurrent close, child process cleanup, shutdown admission/in-flight launch |
+| `scripts/check_editor_format.js` | PASS: UI autosave keeps BOM/CRLF, mixed lines and invalid UTF-8 are read-only/byte-identical |
+| `npm run check:stability` | **12/12 PASS**: 4 workbench + 4 mobile + 4 native main.js product quit, every process exit 0, no timeout/orphan |
 | `scripts/lifecycle_cycles.js` | 20/20 PASS, live 0, exit 0 |
 | Packaged resources + native main shutdown | PASS, exit 0, orphans [] |
 | Build/source/native hash verification | PASS; verify source and actual tested native runtime dependencies before app/ replacement |
@@ -36,17 +36,17 @@ Môi trường Windows x64, Node launcher v26.13.0, Electron 44.9.0, node-pty 1.
 | JS/MJS syntax, `git diff --check` | PASS |
 | `npm audit --omit=dev` | 0 reported vulnerabilities; does not cover dev tooling or constitute a full security audit |
 
-Native evidence chính: `evidence/final-release-check/results.json` và log 12 process. File ghi SHA256 của main.js, pty_manager.js và package.json; đã đối chiếu khớp runtime cuối. `evidence/final-verified` là lượt 12/12 trước đó. Sandbox mới dùng `evidence/final-install-upstream.json`. Các JSON regression mới gắn parent `a93c76d` vì chạy trên working tree trước commit, không giả đó là nội dung commit gốc; bản cuối được gắn bởi source hashes và commit sắp tạo.
+Main native evidence: `evidence/final-release-check/results.json` and the 12 process logs. The file records the SHA256 of main.js, pty_manager.js and package.json; checked to match the final runtime. `evidence/final-verified` is the earlier 12/12 run. The new sandbox uses `evidence/final-install-upstream.json`. The new regression JSONs are tagged with parent `a93c76d` because they ran on the working tree before the commit, not pretending to be the original commit content; the final version is tied by source hashes and the commit about to be created.
 
-## Những failure giữ trong lịch sử và cách xử lý
+## Failures kept in history and how they were handled
 
-- `final-native-pass/workbench-3.log` ghi crash 0xC0000005 trước khi nâng dependency. Không coi vá JS của bản cũ đã giải quyết mutex race.
-- Một số lượt workbench do launcher ẩn window chưa có font-cell metrics. Fixture chủ động show window và chờ đúng fit state, không tăng deadline để che lỗi.
-- Khi window thực sự render, PowerShell gửi CPR/focus replies vào các terminal khác. Diagnostic xác nhận `ESC[5;1R` và `ESC[I`, không phải input drop. Assertion chỉ loại đúng các protocol replies này, vẫn yêu cầu path đúng target và không newline.
-- Ctrl+C/exit vào shell chứa path paste chưa Enter không phải protocol teardown tin cậy. Smoke dùng product close API và kiểm cleanup. Natural concurrent exit vẫn có test riêng với bốn shell sạch, không bỏ coverage native exit.
-- Build validation ban đầu bắt khác biệt metadata do electron-builder normalize package.json và debug PDB bị loại. Chính sách cuối kiểm metadata/version tương ứng và mọi file runtime cần thiết, không đòi debug artifacts. Bản app/ cũ được giữ khi verify thất bại.
-- Lượt installer đầu bị execution policy chặn, không tính PASS. Fixture cuối dùng process riêng với cùng `-ExecutionPolicy Bypass` như launcher repo, không đổi policy máy; asserts kiểm exe/shortcut/exit thực tế.
+- `final-native-pass/workbench-3.log` records a 0xC0000005 crash before the dependency upgrade. The JS patch of the old version is not considered to solve the mutex race.
+- Some workbench runs had no font-cell metrics yet because the launcher hid the window. The fixture actively shows the window and waits for the correct fit state, without raising deadlines to hide failures.
+- Once the window actually renders, PowerShell sends CPR/focus replies into other terminals. Diagnostics confirmed `ESC[5;1R` and `ESC[I`, not dropped input. The assertion only excludes exactly these protocol replies and still requires the path at the right target and no newline.
+- Ctrl+C/exit into a shell containing a pasted path without Enter is not a reliable teardown protocol. The smoke uses the product close API and checks cleanup. Natural concurrent exit still has its own test with four clean shells, without dropping native exit coverage.
+- The initial build validation caught metadata differences because electron-builder normalizes package.json and debug PDBs are excluded. The final policy checks the corresponding metadata/version and every required runtime file, without requiring debug artifacts. The old app/ is kept when verification fails.
+- The first installer run was blocked by the execution policy and is not counted as PASS. The final fixture uses a separate process with the same `-ExecutionPolicy Bypass` as the repo launcher, without changing the machine policy; asserts check the actual exe/shortcut/exit.
 
-## Giới hạn còn công bố
+## Limits still stated
 
-Chưa chạy 30-minute soak, Windows sạch/tài khoản khác, hội thoại/auth/provider/phone/LAN/VPN thật, sleep/wake và upgrade giữa hai phiên bản artifact khác nhau. Sandbox reinstall/rollback cùng artifact không thay thế toàn bộ T25/T28d. Signing và auto-update production chưa có. Các CLI/model/provider adapters còn giới hạn theo capability matrix. Bản build local unsigned; không phát hành hoặc đổi visibility. Những giới hạn này được nêu trong PR, không ghi toàn bộ T01–T28 hoàn tất.
+Not yet run: a 30-minute soak, clean Windows/another account, real conversations/auth/provider/phone/LAN/VPN, sleep/wake and upgrades between two different artifact versions. Sandbox reinstall/rollback of the same artifact does not replace all of T25/T28d. Signing and production auto-update do not exist yet. CLI/model/provider adapters remain limited per the capability matrix. The local build is unsigned; nothing released and visibility unchanged. These limits are stated in the PR, which does not record all of T01–T28 as complete.

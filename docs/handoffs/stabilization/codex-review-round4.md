@@ -1,48 +1,48 @@
-# Codex review vòng 4 — CHANGES_REQUESTED
+# Codex review round 4 — CHANGES_REQUESTED
 
-Ngày 03/11/2026, Asia/Saigon. Branch `fix/workbench-stability`; HEAD `34b7ce321ffd574d03dec7275bcc08bb25696e5c`. Review implementation `b03fed0`, diff `28102e3..34b7ce3`. Working tree đầu lượt sạch. Review chỉ bổ sung fixture/evidence/tài liệu, không sửa implementation/commit/push/PR/merge/release.
+2026-11-03, Asia/Saigon. Branch `fix/workbench-stability`; HEAD `34b7ce321ffd574d03dec7275bcc08bb25696e5c`. Implementation reviewed `b03fed0`, diff `28102e3..34b7ce3`. Working tree clean at the start. The review only adds fixtures/evidence/docs, with no implementation changes/commit/push/PR/merge/release.
 
-**R9 đã đạt:** known conflict chặn native close và giữ buffer. Explicit Discard giữ external file trong ca không có save đang chờ. R1–R8 chạy lại pass. Còn lỗi R10 trong luồng Discard mới, nên chưa approve push/PR.
+**R9 passes:** a known conflict blocks native close and keeps the buffer. Explicit Discard keeps the external file in the case with no pending save. R1–R8 pass on re-run. Bug R10 remains in the new Discard flow, so push/PR is not approved.
 
-## R10 — [P2] Save đã xếp hàng vẫn ghi bản sửa cũ sau khi Discard
+## R10 — [P2] A queued save still writes the old edit after Discard
 
 **Code:** `src/renderer/terminal_grid.js:1389–1392,1404–1409,1444–1455`.
 
-`enqueue_save` giữ snapshot/generation trong closure của từng task. Discard chỉ đặt lại conflict/dirty/loaded rồi reload, không hủy snapshot cũ trong `save_tail`. `perform_save` dùng snapshot cũ nhưng lấy `file.mtime` mới tại thời điểm task chạy, nên sau reload nó có thể ghi snapshot đã discard lên bản external hợp lệ. Generation hiện chỉ được kiểm sau write để lên lịch save mới, chưa ngăn write cũ.
+`enqueue_save` keeps the snapshot/generation in each task's closure. Discard only resets conflict/dirty/loaded and reloads, without cancelling old snapshots in `save_tail`. `perform_save` uses the old snapshot but reads the new `file.mtime` when the task runs, so after the reload it can write the discarded snapshot over the valid external version. The generation is currently only checked after the write to schedule a new save, not to prevent the old write.
 
-**Fixture slow-IO độc lập:** renderer và file IO thật, profile/file tạm. Sau known conflict, pause lần IPC write đầu tiên, gõ tiếp và đợi debounce thứ hai xếp hàng. Bấm Discard, rồi thả request đầu. Handler test vẫn gọi production `write_text`; chỉ thêm pause để kiểm soát thứ tự, không fake kết quả write, không sửa implementation.
+**Independent slow-IO fixture:** real renderer and file IO, temporary profile/files. After a known conflict, pause the first IPC write, keep typing and wait for the second debounce to queue. Click Discard, then release the first request. The test handler still calls the production `write_text`; it only adds a pause to control ordering, without faking write results or changing the implementation.
 
-Kết quả ghi nhận sau Discard:
+Results recorded after Discard:
 
-1. Control: đĩa và editor có `EXTERNAL VERSION TO PRESERVE`.
-2. Task cũ ghi **OLD AUTOSAVE TWO** xuống đĩa; fixture đọc xác nhận nội dung này ngay sau successful write.
-3. Autosave tiếp theo ghi trả lại **EXTERNAL VERSION TO PRESERVE**.
+1. Control: disk and editor have `EXTERNAL VERSION TO PRESERVE`.
+2. The old task writes **OLD AUTOSAVE TWO** to disk; the fixture reads back and confirms this content right after the successful write.
+3. The next autosave writes **EXTERNAL VERSION TO PRESERVE** back.
 
-**Đây là overwrite tạm thời đã tái hiện, không khẳng định mất dữ liệu vĩnh viễn trong ca test.** Agent/file watcher/build hoặc ứng dụng khác có thể quan sát/xử lý nội dung đã bị người dùng discard trong khoảng đó; nếu tiến trình dừng giữa hai write, đĩa chứa nội dung bị discard. Không được coi final contents đúng là đã bảo vệ Discard.
+**This is a reproduced temporary overwrite, not a claim of permanent data loss in the test case.** Agents/file watchers/builds or other apps can observe/act on content the user discarded during that window; if the process stops between the two writes, the disk contains the discarded content. Correct final contents must not be taken as Discard being protected.
 
-**Giao Grok:** đồng bộ Discard với queue/in-flight saves; invalidate snapshot thuộc lượt chỉnh sửa trước Discard trước khi chúng được phép write, xử lý response cũ không thay metadata/buffer mới. Có thể chờ in-flight operation an toàn rồi reload, hoặc dùng save epoch/cancellation phù hợp. Giữ revision external-file check; không ghi đè external version và không dựa vào autosave sau để sửa lại stale write.
+**For Grok:** synchronize Discard with queued/in-flight saves; invalidate snapshots from edits before the Discard before they are allowed to write, and make sure old responses do not replace the new metadata/buffer. You can safely wait for the in-flight operation and then reload, or use a suitable save epoch/cancellation. Keep the external-file revision check; never overwrite the external version and never rely on a later autosave to undo a stale write.
 
-**Nghiệm thu:** Discard với 0/1/nhiều save pending, slow IO, lỗi/conflict, đổi tab và close/quit trong quá trình đó. Sau thao tác Discard, không successful write nào được ghi discarded snapshot; buffer/đĩa cuối đúng external version. Test cho phép Discard chờ in-flight IO; gate được release độc lập với thời điểm reload, nên không ép cách triển khai phải reload ngay.
+**Acceptance:** Discard with 0/1/many pending saves, slow IO, errors/conflicts, tab switch and close/quit during the process. After Discard, no successful write contains the discarded snapshot; the final buffer/disk is the external version. The test allows Discard to wait for in-flight IO; the gate is released independently of the reload timing, so it does not force the implementation to reload immediately.
 
-Fixture `scripts/codex_review_discard_pending.js`, **exit 1**, control PASS/R10 FAIL, không có harness error. Evidence đầy đủ nhất: `evidence/codex-review-discard-pending-34b7ce3-1793707417778.json`.
+Fixture `scripts/codex_review_discard_pending.js`, **exit 1**, control PASS/R10 FAIL, no harness error. Most complete evidence: `evidence/codex-review-discard-pending-34b7ce3-1793707417778.json`.
 
-Evidence `...1793707292657.json` của lần đầu chỉ kiểm final contents nên PASS nhưng thiếu assertion kiểm các write tạm thời. Lượt `...1793707338171.json` bổ sung audit write cho thấy cùng lỗi; lượt cuối bổ sung gate release độc lập để hỗ trợ cách sửa drain-before-reload. Giữ cả lịch sử để không biến test yếu thành chứng minh đã an toàn.
+The first run's evidence `...1793707292657.json` only checked final contents so it PASSed, but lacked assertions on temporary writes. Run `...1793707338171.json` added the write audit showing the same bug; the final run added an independent release gate to support a drain-before-reload fix. All history is kept so a weak test is not turned into proof of safety.
 
-## Kiểm chứng vòng này
+## Verification this round
 
-| Kiểm tra | Kết quả |
+| Check | Result |
 | --- | --- |
 | `npm run check` | 27 PASS, exit 0 |
-| `scripts/codex_review_regressions.js` | R1–R6 PASS, exit 0; R2 lần này chụp trạng thái `saving`, còn fixture R7 xác nhận conflict thật và giữ buffer |
+| `scripts/codex_review_regressions.js` | R1–R6 PASS, exit 0; R2 captured the `saving` state this time, while fixture R7 confirms a real conflict and keeps the buffer |
 | `scripts/codex_review_editor_lifecycle.js` | CONTROL/R7/R7_DISCARD/R8 PASS, exit 0 |
 | `scripts/codex_review_conflicted_quit.js` | SETUP/R9 PASS, exit 0 |
 | `scripts/codex_review_discard_pending.js` | Control PASS, **R10 FAIL, exit 1** |
-| Mobile smoke | All checks passed, exit 0; không có native exception trong log |
-| Workbench smoke | Lần đầu timeout `test shells exit` tại `scripts/smoke_workbench.js:194`; lần xác nhận chạy riêng PASS/exit 0. Không coi lần PASS sau là xóa failure trước |
+| Mobile smoke | All checks passed, exit 0; no native exception in the log |
+| Workbench smoke | First run timed out at `test shells exit` in `scripts/smoke_workbench.js:194`; the separate confirmation run PASS/exit 0. The later PASS does not erase the earlier failure |
 | Lifecycle | 20/20 PASS, live 0 |
 
-Chạy các script Electron bằng `node node_modules/electron/cli.js <script>`. Log run riêng workbench ở `evidence/codex-review-workbench-34b7ce3.log`; mobile ở `evidence/codex-review-mobile-34b7ce3.log`. Các JSON R1–R9 trong thư mục evidence gắn HEAD `34b7ce3`. Không sửa evidence lịch sử.
+Electron scripts are run with `node node_modules/electron/cli.js <script>`. The separate workbench run's log is at `evidence/codex-review-workbench-34b7ce3.log`; mobile at `evidence/codex-review-mobile-34b7ce3.log`. The R1–R9 JSONs in the evidence folder are tagged with HEAD `34b7ce3`. Historical evidence not altered.
 
-**Theo dõi T23:** timeout shell exit một lần chưa xác định product/native/harness. Grok cần ghi terminal IDs, alive/status/lifecycle tại timeout và kiểm trình tự shutdown. Không suppress lỗi hoặc chỉ tăng timeout. Một lượt chạy riêng pass chưa chứng minh tính ổn định; không báo soak/native lifecycle hoàn tất.
+**T23 follow-up:** the one-off shell-exit timeout is not yet attributed to product/native/harness. Grok needs to log terminal IDs, alive/status/lifecycle at the timeout and check the shutdown order. Do not suppress the error or just raise the timeout. One passing separate run does not prove stability; do not report soak/native lifecycle as complete.
 
-Build/package/install/Windows sạch/30-minute soak/CLI-provider-phone thật và các nghiệm thu PARTIAL khác chưa chạy lại. Public release vẫn NOT_READY. Tiếp tục local sửa R10, cập nhật regression meaningful và evidence SHA mới; chưa push/PR/merge/release trong lượt Grok sửa.
+Build/package/install/clean Windows/30-minute soak/real CLI-provider-phone and other PARTIAL acceptance checks were not re-run. Public release is still NOT_READY. Continue locally fixing R10, update meaningful regressions and evidence with the new SHA; no push/PR/merge/release in Grok's fix pass.

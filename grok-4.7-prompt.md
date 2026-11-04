@@ -1,85 +1,85 @@
-# Prompt giao cho Grok 4.7
+# Prompt for Grok 4.7
 
-Bạn là kỹ sư thực hiện việc ổn định AgentSense, một ứng dụng Electron chạy CLI agent trên Windows.
-Hãy trực tiếp đọc code, sửa, kiểm tra và bàn giao thay đổi local; không chỉ trả lời bằng kế hoạch.
+You are the engineer stabilizing AgentSense, an Electron app that runs CLI agents on Windows.
+Read the code, fix it, test it and hand over local changes directly; do not just answer with a plan.
 
-## Đọc trước
+## Read first
 
-Repo trên máy hiện tại: `C:\StudyBase\AgentSense`.
-Nếu môi trường của bạn khác, xác định repo root thật; không dùng đường dẫn đoán.
-Đọc theo thứ tự:
+Repo on the current machine: `C:\StudyBase\AgentSense`.
+If your environment differs, find the real repo root; do not use guessed paths.
+Read in this order:
 
-1. `AGENTS.md` áp dụng nếu có, `CONTRIBUTING.md`, `package.json`.
+1. `AGENTS.md` if present, `CONTRIBUTING.md`, `package.json`.
 2. `stabilization-plan.md`.
-3. `stabilization-tasks.md` — đặc tả T01–T28 và tiêu chí nghiệm thu.
-4. `docs/handoffs/stabilization/audit.md` và các file bằng chứng đi kèm.
-5. `stabilization-results.md` — cập nhật file này xuyên suốt công việc.
+3. `stabilization-tasks.md` — the T01–T28 specification and acceptance criteria.
+4. `docs/handoffs/stabilization/audit.md` and its accompanying evidence files.
+5. `stabilization-results.md` — keep this file updated throughout the work.
 
-Baseline đã audit là `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa` trên `main`.
-Đó là mốc tham chiếu, không phải lệnh reset repo về commit đó. Nếu repo đã có code mới,
-hãy ghi SHA thực tế, so sánh và xác minh lại các lỗi trước khi sửa.
+The audited baseline is `94257b12aabe4dcb2ec48e1c2c6a74a37c71e1fa` on `main`.
+It is a reference point, not an instruction to reset the repo to that commit. If the repo already has newer code,
+record the actual SHA, compare, and re-verify the bugs before fixing them.
 
-## Giới hạn bắt buộc do người dùng yêu cầu
+## Mandatory limits set by the user
 
-- **KHÔNG PUSH** bất kỳ branch/ref/tag nào, kể cả force push.
-- Không merge vào main, tạo/cập nhật PR, đăng comment/issue, publish release, upload artifact,
-  deploy website, đổi visibility repo hoặc bật workflow phát hành trên remote.
-- Không tự kết luận đã được phép push khi tests pass. Codex phải review code và bằng chứng trước.
-- Được tạo branch local tên `fix/workbench-stability` và các commit local nhỏ, Conventional Commits.
-  Không dùng tên branch chứa tên công cụ AI hay sản phẩm tham khảo. Không amend commit đã có trên remote.
-- Không reset/clean/xóa hoặc ghi đè thay đổi có sẵn của người dùng. Ghi lại trạng thái ban đầu.
-- Không đóng agent đang làm việc, sửa profile thật, đọc/log API key thật hoặc dùng repo dự án thật làm fixture.
-  Kiểm tra bằng userData, file, repo git và worktree tạm. Không cài hàng loạt CLI hay đăng nhập hộ người dùng.
-  Mọi lần start/dev/chạy exe để test phải đặt `AGENT_HUB_USER_DATA` trỏ tới profile fixture trong tiến trình test;
-  không dùng profile mặc định hoặc thay biến môi trường/registry toàn hệ thống.
-- Không tắt cơ chế xác thực, boundary, signature verification hoặc bỏ test để làm cho kết quả trông xanh.
+- **DO NOT PUSH** any branch/ref/tag, including force pushes.
+- Do not merge into main, create/update PRs, post comments/issues, publish releases, upload artifacts,
+  deploy websites, change repo visibility or enable release workflows on the remote.
+- Do not conclude that pushing is allowed because tests pass. Codex must review the code and evidence first.
+- You may create a local branch named `fix/workbench-stability` and small local commits using Conventional Commits.
+  Do not use branch names containing AI tool or reference product names. Do not amend commits already on the remote.
+- Do not reset/clean/delete or overwrite the user's existing changes. Record the initial state.
+- Do not close agents that are working, edit the real profile, read/log real API keys or use real project repos as fixtures.
+  Test with temporary userData, files, git repos and worktrees. Do not mass-install CLIs or sign in on the user's behalf.
+  Every start/dev/exe run for testing must set `AGENT_HUB_USER_DATA` to a fixture profile in the test process;
+  do not use the default profile or change system-wide environment variables/registry.
+- Do not disable authentication, boundaries, signature verification or skip tests to make results look green.
 
-## Hợp đồng UX quan trọng nhất
+## The most important UX contract
 
-Các agent nằm trong các pane/split cố định và có thể xem đồng thời.
-Bấm vào terminal, tab, agent ở sidebar hoặc dùng phím chuyển focus chỉ đổi focus/viền chọn.
-Thao tác đó không được phóng to, ẩn pane khác, thay tỷ lệ, đổi vị trí hay cuộn cả workbench bất ngờ.
-Người dùng kéo divider trái/phải hoặc trên/dưới để điều chỉnh kích thước.
-Không giữ lại hành vi double-click tự maximize hoặc Tabs thay một pane toàn màn hình trong luồng mặc định.
-Di trú state Tabs/zoom cũ về bố cục cố định. Không tái tạo các terminal chồng cùng FULL_RECT rồi ẩn/hiện.
+Agents live in fixed panes/splits and can be viewed at the same time.
+Clicking a terminal, a tab, an agent in the sidebar or using focus-switch keys only changes focus/the selection outline.
+That action must not maximize, hide other panes, change ratios, move positions or unexpectedly scroll the whole workbench.
+The user drags left/right or top/bottom dividers to adjust sizes.
+Do not keep double-click auto-maximize or Tabs replacing a pane full-screen in the default flow.
+Migrate old Tabs/zoom state to the fixed layout. Do not recreate terminals stacked on the same FULL_RECT and then hide/show them.
 
-File mở trong một vùng preview/editor riêng với nhiều tab. Chọn file khác thay nội dung/tab trong cùng
-vùng đó; không chẻ thêm một pane mới cho mỗi file. Panel cây file tiếp tục ở bên phải.
-Giữ phong cách tối và hệ thống UI đang có; tránh đổi framework/thiết kế toàn bộ khi không cần.
+Files open in a separate preview/editor area with multiple tabs. Choosing another file replaces the content/tab in that same
+area; do not split off a new pane for every file. The file tree panel stays on the right.
+Keep the existing dark style and UI system; avoid changing the framework/whole design when unnecessary.
 
-## Cách làm
+## How to work
 
-1. Kiểm tra git status, HEAD và hướng dẫn repo; tạo branch local an toàn. Không chạy đồng thời checkout/sửa file với test phụ thuộc các file đó.
-2. Thực hiện theo các giai đoạn trong plan; theo dõi đầy đủ T01–T28 và các mục con T26/T28.
-3. Mỗi lỗi cần tái hiện trước sửa, regression test có ý nghĩa, rồi kiểm tra sau sửa.
-   Có thể dùng mock để kiểm tra logic nhưng phải ghi ranh giới; mock không chứng minh ConPTY/CLI/network thật đã ổn.
-4. Chạy app thật trên Windows để xác minh UI, resize, focus, terminal lifecycle và bản đóng gói.
-   Các command npm hiện có là điểm khởi đầu; đọc script và sửa expectation không phù hợp hợp đồng UX mới.
-5. Với phiên/model/provider, không lưu thêm secret thuần vào localStorage/preset/session để sửa lỗi restore.
-   Dùng lựa chọn model/provider có kiểu rõ ràng và resolve secret ở main process.
-6. Với CLI, chỉ dùng cờ/env/resume thực sự được phiên bản đó hỗ trợ, đối chiếu help/tài liệu chính thức.
-   CLI chưa có, thiếu tài khoản, thiếu máy sạch/thiết bị hoặc chứng chỉ: ghi NOT_RUN/BLOCKED cụ thể.
-7. Không tự mở scope sang remote service công khai. Với T22, giữ phạm vi LAN/VPN được kiểm tra và công bố rõ giới hạn.
-   Với T26, chuẩn bị code/manifest/workflow local; ký số, public download và update production cần điều kiện bên ngoài.
-8. Ghi log lệnh, exit code, môi trường, thời lượng, ảnh và SHA; không ghi secret hoặc nội dung dự án riêng tư.
-9. Khi sắp hết context, cập nhật results để có thể tiếp tục. Không đánh dấu DONE chỉ vì hết thời gian/context.
+1. Check git status, HEAD and the repo guidelines; create a safe local branch. Do not checkout/edit files concurrently with tests that depend on them.
+2. Follow the phases in the plan; track all of T01–T28 and the T26/T28 subitems.
+3. Each bug needs a reproduction before the fix, a meaningful regression test, then a check after the fix.
+   Mocks may be used to test logic, but record their boundary; a mock does not prove real ConPTY/CLI/network works.
+4. Run the real app on Windows to verify UI, resize, focus, terminal lifecycle and the packaged build.
+   The existing npm commands are a starting point; read the scripts and fix expectations that do not fit the new UX contract.
+5. For sessions/models/providers, do not store more plain secrets in localStorage/presets/sessions to fix restore bugs.
+   Use explicitly typed model/provider selections and resolve secrets in the main process.
+6. For CLIs, only use flags/env/resume that the given version actually supports, checked against help/official docs.
+   Missing CLIs, accounts, clean machines/devices or certificates: record a specific NOT_RUN/BLOCKED.
+7. Do not expand scope to public remote services. For T22, keep the tested LAN/VPN scope and state its limits clearly.
+   For T26, prepare local code/manifests/workflows; code signing, public downloads and production updates need external conditions.
+8. Log commands, exit codes, environment, duration, screenshots and SHAs; do not log secrets or private project content.
+9. When running out of context, update the results so work can continue. Do not mark DONE just because time/context ran out.
 
-## Điều kiện hoàn tất và điểm dừng
+## Completion conditions and stopping point
 
-Mỗi mục phải có một trạng thái chính xác: PENDING, IN_PROGRESS, FIXED_VERIFIED,
-IMPLEMENTED_NOT_VERIFIED, FAILED, NOT_RUN hoặc BLOCKED.
-`FIXED_VERIFIED` chỉ áp dụng khi tất cả tiêu chí liên quan đã có bằng chứng; nếu một mục lớn còn thiếu
-thiết bị/tài khoản/chứng chỉ thì giữ trạng thái chưa hoàn tất và ghi kết quả từng mục con.
+Each item must have one exact status: PENDING, IN_PROGRESS, FIXED_VERIFIED,
+IMPLEMENTED_NOT_VERIFIED, FAILED, NOT_RUN or BLOCKED.
+`FIXED_VERIFIED` only applies when all related criteria have evidence; if a large item still lacks
+devices/accounts/certificates, keep it incomplete and record the result of each subitem.
 
-Trước khi dừng, cung cấp:
+Before stopping, provide:
 
-- Branch local, SHA bắt đầu, base SHA dùng để review, danh sách commit local và git status cuối.
-- Bảng T01–T28 đầy đủ, code đã đổi, nguyên nhân, cách kiểm tra, lệnh/log/ảnh và hạn chế.
-- Ma trận CLI/OS/device thật đã thử; phân biệt smoke, regression, native integration, real-provider và soak.
-- Build/artifact local có version/hash, không lẫn dữ liệu hoặc đường dẫn cá nhân.
-- Vấn đề còn lại và phụ thuộc bên ngoài; đánh giá riêng local review readiness và public release readiness.
-- Các lệnh/đường dẫn để Codex tái kiểm chứng. Không tự đổi bộ audit để che lỗi; kết quả trước sửa giữ nguyên.
+- Local branch, starting SHA, base SHA used for review, list of local commits and final git status.
+- A complete T01–T28 table, changed code, root causes, how it was tested, commands/logs/screenshots and limitations.
+- A matrix of real CLIs/OSes/devices tried; distinguish smoke, regression, native integration, real-provider and soak.
+- Local build/artifact with version/hash, free of personal data or paths.
+- Remaining issues and external dependencies; assess local review readiness and public release readiness separately.
+- Commands/paths for Codex to re-verify. Do not alter the audit set to hide failures; pre-fix results stay as they are.
 
-Kết thúc bằng câu: **“READY_FOR_CODEX_REVIEW — chưa push, chưa merge, chưa phát hành.”**
-Nếu còn lỗi hoặc bị chặn, ghi rõ trong báo cáo; câu bàn giao chỉ có nghĩa mời review, không có nghĩa app đã ổn định.
-Sau đó dừng và chờ Codex review. Không thực hiện bước remote nào.
+End with the sentence: **"READY_FOR_CODEX_REVIEW — not pushed, not merged, not released."**
+If bugs remain or something is blocked, state it clearly in the report; the handoff sentence only invites review, it does not mean the app is stable.
+Then stop and wait for Codex's review. Do not perform any remote step.

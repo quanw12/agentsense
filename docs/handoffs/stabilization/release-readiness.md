@@ -1,55 +1,55 @@
-# AgentSense — đánh giá khả năng phát hành
+# AgentSense — release readiness assessment
 
-Ngày: 03/11/2026. Code kiểm tra: `main`, commit `94257b1`.
+Date: 2026-11-03. Code checked: `main`, commit `94257b1`.
 
-## Kết luận
+## Conclusion
 
-Phù hợp để tiếp tục test nội bộ. Chưa đủ bằng chứng để gọi là bản stable cho người dùng rộng rãi.
-Nên sửa các điểm dưới đây, sau đó phát hành prerelease Windows x64 cho nhóm thử nghiệm nhỏ.
+Suitable to continue internal testing. Not enough evidence yet to call it a stable build for a wide audience.
+The points below should be fixed, then a Windows x64 prerelease shipped to a small group of testers.
 
-## Kết quả kiểm tra thực tế
+## Actual test results
 
-| Hạng mục | Kết quả |
+| Area | Result |
 | --- | --- |
-| Cập nhật code | Local main đã fast-forward lên origin/main; working tree sạch |
-| Workbench | 25 kiểm tra qua; lượt chạy mới bị timeout 120 giây sau kiểm tra renderer errors, trong đoạn dọn/đóng phiên; kiểm tra cuối về bảo toàn worktree chưa chạy xong |
-| Mobile | Toàn bộ kiểm tra HTTP/WebSocket, xác thực, attach/input và tạo/đóng phiên qua; có log AttachConsole failed từ helper node-pty lúc teardown |
-| Cài mới | Qua, dùng payload Electron thật, đích cài và shortcut đều nằm trong thư mục tạm |
-| Nâng cấp | Qua, file cũ dư được loại bỏ và dữ liệu mẫu trong profile được giữ nguyên |
-| Gỡ cài đặt | Qua, app và shortcut được gỡ; dữ liệu mẫu được giữ nguyên |
-| Dependency audit | npm audit --omit=dev báo 0 advisory; kết quả này không thay cho audit toàn bộ app |
-| Binary Windows | Có dist/win-unpacked/AgentSense.exe; chữ ký số: NotSigned |
+| Code update | Local main fast-forwarded to origin/main; working tree clean |
+| Workbench | 25 checks passed; the new run timed out at 120 seconds after the renderer-errors check, during session cleanup/close; the final worktree-preservation check did not finish |
+| Mobile | All HTTP/WebSocket, auth, attach/input and session create/close checks passed; AttachConsole failed logged from the node-pty helper at teardown |
+| Fresh install | Passed, using the real Electron payload, with the install target and shortcuts in a temporary folder |
+| Upgrade | Passed, leftover old files removed and sample profile data kept intact |
+| Uninstall | Passed, app and shortcuts removed; sample data kept intact |
+| Dependency audit | npm audit --omit=dev reports 0 advisories; this does not replace a full app audit |
+| Windows binary | dist/win-unpacked/AgentSense.exe exists; digital signature: NotSigned |
 
-Các kiểm tra cài đặt chạy trên máy phát triển với thư mục/profile tạm, chưa phải Windows sạch.
-Không thay đổi bản cài đang dùng, dữ liệu cá nhân, visibility GitHub hoặc phát hành release.
+The installation tests ran on the development machine with temporary folders/profiles, not on clean Windows.
+The installed copy in use, personal data, GitHub visibility and releases were not changed.
 
-## Cần xử lý trước khi phát hành
+## To handle before release
 
-1. **Xác định timeout khi đóng phiên.** Bộ test từng qua ở lượt trước, nhưng lượt này không hoàn tất.
-   Cần phân biệt lỗi cleanup của test với lỗi lifecycle ConPTY của app, rồi kiểm tra đóng/mở lặp lại.
-2. **Giữ cấu hình model/API khi khởi động lại.** `seat_spec` truyền env_extra khi tạo phiên,
-   nhưng session_store không lưu trường này; restore/restart không tái dựng cấu hình.
-   Đã xác nhận bằng lời gọi make_record với env_extra mẫu: trường bị loại bỏ.
-   Cách sửa nên lưu lựa chọn model/provider và bảo vệ secret phù hợp, tránh ghi thêm API key thuần vào session record.
-3. **Đồng bộ payload phát hành.** Hash terminal_grid.js trong `app/` khác source;
-   hash trong `dist/win-unpacked/resources/app/` trùng source. Installer lấy payload từ `app/`.
-   Quy trình phát hành phải build mới, đồng bộ payload, kiểm tra version/hash rồi mới tạo zip.
-4. **Chuẩn hóa version và artifact.** Chưa có .github/workflows, git tag hay CHANGELOG trong checkout.
-   Cần quy trình build/test theo tag, tên artifact có version, checksum và release notes.
-   Nâng cấp hiện tại là tải bản mới và chạy lại installer; chưa có auto-updater.
-5. **Chọn nơi tải công khai.** GitHub connector xác nhận repository đang private.
-   Cần một nơi phân phối mà người dùng mục tiêu truy cập được; chưa tự thay đổi visibility.
+1. **Determine the timeout when closing sessions.** The suite passed in an earlier run, but this run did not complete.
+   Need to separate a test cleanup bug from an app ConPTY lifecycle bug, then test repeated open/close.
+2. **Keep the model/API configuration on restart.** `seat_spec` passes env_extra when creating a session,
+   but session_store does not save this field; restore/restart does not rebuild the configuration.
+   Confirmed by calling make_record with a sample env_extra: the field is dropped.
+   The fix should save the model/provider choice and protect secrets appropriately, avoiding writing more plain API keys into session records.
+3. **Sync the release payload.** The hash of terminal_grid.js in `app/` differs from source;
+   the hash in `dist/win-unpacked/resources/app/` matches source. The installer takes its payload from `app/`.
+   The release process must build fresh, sync the payload, check version/hash and only then create the zip.
+4. **Standardize version and artifacts.** No .github/workflows, git tag or CHANGELOG in the checkout yet.
+   Need a tag-driven build/test process, versioned artifact names, checksums and release notes.
+   Upgrading today means downloading the new version and rerunning the installer; there is no auto-updater.
+5. **Choose a public download location.** The GitHub connector confirms the repository is private.
+   Need a distribution channel the target users can access; visibility was not changed.
 
-## Trước bản stable
+## Before a stable release
 
-- Kiểm tra trên Windows sạch, tài khoản thường, đường dẫn có khoảng trắng/tiếng Việt,
-  máy thiếu CLI/Git, nâng cấp giữa hai phiên bản và khôi phục phiên sau khi app đóng bất thường.
-- Kiểm tra hội thoại thật với các CLI chủ lực và chạy nhiều agent trong thời gian dài.
-- Bảo vệ API key: providers_store hiện ghi api_key trực tiếp vào providers.json.
-- Xem xét code signing để cải thiện trải nghiệm tải/chạy trên Windows.
-- Thử nghiệm theo kênh `v1.0.0-beta.1`, `v1.0.0-beta.2`, rồi `v1.0.0` khi đạt tiêu chí ổn định.
+- Test on clean Windows, a standard account, paths with spaces/Vietnamese characters,
+  machines missing CLIs/Git, upgrades between two versions and session recovery after the app closes abnormally.
+- Test real conversations with the main CLIs and run many agents over a long period.
+- Protect API keys: providers_store currently writes api_key directly into providers.json.
+- Consider code signing to improve the download/run experience on Windows.
+- Trial via the `v1.0.0-beta.1`, `v1.0.0-beta.2` channel, then `v1.0.0` once stability criteria are met.
 
-## Mã liên quan
+## Related code
 
 - `scripts/smoke_workbench.js`, `scripts/smoke_mobile.js`
 - `install.ps1`, `uninstall.ps1`, `scripts/build_app.mjs`, `package.json`
