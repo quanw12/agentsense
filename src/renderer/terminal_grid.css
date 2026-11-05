@@ -564,6 +564,10 @@
   font: 12px "Segoe UI", sans-serif;
 }
 .tf-file-tab-active { color: #fff; }
+.tf-file-tab-preview { font-style: italic; }
+/* A dragged tab or tree row must reach the pane under it, not the editor or PDF frame inside. */
+.tg-internal-drag .tf-body { pointer-events: none; }
+.tg-internal-drag .tg-drop-indicator { pointer-events: none; }
 .tf-editor {
   flex: 1 1 auto;
   width: 100%;

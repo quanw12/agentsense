@@ -108,6 +108,7 @@
   let file_check_timer = 0;
   let file_check_running = false;
   let file_check_again = false;
+  let dragged_tab = null; // { pane, file } while a file tab is being dragged; getData is unreadable during dragover
 
   function create_el(tag, class_name, text) {
     const node = document.createElement(tag);
@@ -192,6 +193,21 @@
     // navigate to that file and lose the app.
     document.addEventListener('dragover', (event) => event.preventDefault());
     document.addEventListener('drop', (event) => event.preventDefault());
+    // While a tab or tree row is dragged, editors and PDF frames must not swallow the drag from their pane.
+    document.addEventListener('dragstart', (event) => {
+      const types = Array.from((event.dataTransfer && event.dataTransfer.types) || []);
+      if (types.includes(INTERNAL_PATH_TYPE)) document.body.classList.add('tg-internal-drag');
+    });
+    const end_internal_drag = () => {
+      document.body.classList.remove('tg-internal-drag');
+      for (const grid of LIVE_GRIDS) {
+        if (grid.active_view) show_drop_indicator(grid.active_view, null);
+      }
+      // A drop handler further down still needs the tab; a removed source tab never reports dragend.
+      window.setTimeout(() => { dragged_tab = null; }, 0);
+    };
+    document.addEventListener('dragend', end_internal_drag);
+    document.addEventListener('drop', end_internal_drag, true);
     window.hub.terminals.on_data((terminal_id, data) => {
       const pane = PANE_BY_TERMINAL.get(terminal_id);
       if (pane) pane.term.write(data);
@@ -237,7 +253,7 @@
       provider_id: info.provider_id || null,
       resume_mode: info.resume_mode || null,
     });
-    mount_pane(grid, view, pane);
+    mount_pane(grid, view, pane, agent_page(view));
     // The buffer is the output so far; live data for this terminal is routed from now on.
     if (info.buffer) pane.term.write(info.buffer);
     if (info.alive) {
@@ -525,7 +541,7 @@
       grid.dom.note.textContent = 'No terminals. Click + New session to start one.';
       return;
     }
-    const files = view.panes.length - count;
+    const files = view.panes.reduce((total, pane) => total + (pane.kind === 'file' ? pane.files.length : 0), 0);
     grid.dom.note.textContent = `${view.workspace.name} / ${count} agent${count === 1 ? '' : 's'}${files ? ` · ${files} file${files === 1 ? '' : 's'}` : ''}`;
     grid.dom.note.title = 'Ctrl+Tab moves focus · Drag a divider to resize · Ctrl+P finds a file';
   }
@@ -651,7 +667,7 @@
       disposed: false,
     };
     const saved_pages = Array.isArray(prefs.pages) && prefs.pages.length ? prefs.pages : [{ id: 'page-1', name: 'Page 1' }];
-    view.pages = saved_pages.map((page) => ({ id: page.id, name: page.name, layout: null }));
+    view.pages = saved_pages.map((page) => ({ id: page.id, name: page.name, kind: page.kind, layout: null }));
     view.active_page = view.pages.find((page) => page.id === prefs.active_page) || view.pages[0];
     Object.defineProperty(view, 'layout', {
       get: () => view.active_page.layout,
@@ -668,7 +684,8 @@
     view.file_panel = window.init_file_panel({
       container: view.file_side,
       workspace: view.workspace,
-      on_open_file: (rel_path) => open_file_in_grid(grid, view.workspace, rel_path),
+      on_open_file: (rel_path) => open_in_file_page(grid, view, rel_path),
+      on_pin_file: (rel_path) => open_in_file_page(grid, view, rel_path, null, true),
       on_error: (message) => show_banner(grid, String(message || 'File panel error')),
     });
   }
@@ -769,11 +786,19 @@
     }
     const saved_files = workspace_ui(view.workspace.id).file_tabs;
     if (Array.isArray(saved_files)) {
+      const showing = [];
       for (const tab of saved_files) {
         if (tab && typeof tab.path === 'string' && tab.path !== '') {
           view.active_page = view.pages.find((page) => page.id === tab.page_id) || view.pages[0];
-          open_file_in_grid(grid, view.workspace, tab.path, tab.root);
+          const pane = open_file_in_grid(grid, view.workspace, tab.path, tab.root, null, {
+            group_id: tab.group || null,
+            preview: tab.preview === true,
+          });
+          if (pane && tab.active) showing.push({ pane, index: pane.files.length - 1 });
         }
+      }
+      for (const { pane, index } of showing) {
+        if (pane.active !== index) void activate_file(grid, pane, index, true);
       }
     }
     apply_saved_layout(view);
@@ -1269,6 +1294,7 @@
       grid,
       view,
       kind: 'file',
+      group_id: spec.group_id || null,
       name: spec.name,
       path: spec.path,
       files: [],
@@ -1301,7 +1327,104 @@
     });
     element.addEventListener('mousedown', () => set_active_pane(grid, pane), true);
     attach_pane_rearrange(grid, pane);
+    attach_file_group_drop(grid, pane);
+    // Double-click keeps a preview tab. The listener is on the strip because the click already rebuilt the tab.
+    tabstrip.addEventListener('dblclick', (event) => {
+      if (event.target && event.target.closest && event.target.closest('.tf-file-tab-close')) return;
+      const file = pane.files[pane.active];
+      if (!file || !file.preview) return;
+      file.preview = false;
+      render_file_tabs(grid, pane);
+      save_view_layout(grid, view);
+    });
     return pane;
+  }
+
+  // Where a dragged tab or tree row lands in a file group: 'center' joins its tabs, an edge splits beside it.
+  // Null when dropping changes nothing: the only tab of a group dropped back onto that group.
+  function file_drop_zone(pane, event) {
+    if (dragged_tab && dragged_tab.pane === pane && pane.files.length <= 1) return null;
+    if (event.target && event.target.closest && event.target.closest('.tf-tabs, .tg-pane-titlebar')) return 'center';
+    const box = pane.element.getBoundingClientRect();
+    const across = (event.clientX - box.left) / Math.max(1, box.width);
+    const down = (event.clientY - box.top) / Math.max(1, box.height);
+    const edges = [['left', across], ['right', 1 - across], ['top', down], ['bottom', 1 - down]];
+    edges.sort((a, b) => a[1] - b[1]);
+    return edges[0][1] < DROP_EDGE_ZONE ? edges[0][0] : 'center';
+  }
+
+  function attach_file_group_drop(grid, pane) {
+    const element = pane.element;
+    const is_internal = (event) => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes(INTERNAL_PATH_TYPE);
+    element.addEventListener('dragover', (event) => {
+      if (!is_internal(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      pane.view.pane_grid.classList.remove('tg-page-drop-target');
+      event.dataTransfer.dropEffect = 'copy';
+      const zone = file_drop_zone(pane, event);
+      show_drop_indicator(pane.view, zone ? { target: pane, zone } : null);
+    });
+    element.addEventListener('dragleave', (event) => {
+      if (!element.contains(event.relatedTarget)) show_drop_indicator(pane.view, null);
+    });
+    element.addEventListener('drop', (event) => {
+      if (!is_internal(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const zone = file_drop_zone(pane, event);
+      show_drop_indicator(pane.view, null);
+      if (!zone) return;
+      const tab = dragged_tab;
+      if (tab && tab.pane.view === pane.view && tab.pane.files.includes(tab.file)) {
+        const group = zone === 'center' ? pane : add_file_group(grid, pane.view, pane, zone);
+        move_file_to_group(grid, tab.pane, tab.file, group);
+        return;
+      }
+      let source = null;
+      try { source = JSON.parse(event.dataTransfer.getData(INTERNAL_PATH_TYPE)); } catch { source = null; }
+      if (!source || typeof source.root_path !== 'string' || typeof source.rel_path !== 'string') return;
+      const group = zone === 'center' ? pane : add_file_group(grid, pane.view, pane, zone);
+      open_file_in_grid(grid, pane.view.workspace, source.rel_path, source.root_path, null, { group_id: group.group_id });
+    });
+  }
+
+  // A new empty file group beside another pane of the page on screen.
+  function add_file_group(grid, view, target, side) {
+    const pane = build_file_pane(grid, view, { name: 'Files', path: '', group_id: new_group_id(view) });
+    mount_file_pane(grid, view, pane, target, side);
+    return pane;
+  }
+
+  // The tab object moves as it is, so unsaved edits, a queued save or a conflict all come along.
+  function move_file_to_group(grid, source, file, target) {
+    const view = source.view;
+    if (source === target) {
+      void activate_file(grid, target, target.files.indexOf(file), false);
+      select_tab(grid, target);
+      return;
+    }
+    const twin = target.files.findIndex((item) => item.root === file.root && item.path === file.path);
+    if (twin !== -1) {
+      void activate_file(grid, target, twin, true);
+      select_tab(grid, target);
+      return;
+    }
+    source.files.splice(source.files.indexOf(file), 1);
+    source.load_token = (source.load_token || 0) + 1;
+    file.preview = false;
+    file.owner = target;
+    target.files.push(file);
+    void activate_file(grid, target, target.files.length - 1, !(file.dirty || file.conflict));
+    if (source.files.length === 0) {
+      remove_pane(grid, source);
+    } else {
+      source.active = Math.max(0, Math.min(source.active, source.files.length - 1));
+      void activate_file(grid, source, source.active, true);
+    }
+    select_tab(grid, target);
+    save_view_layout(grid, view);
+    notify_grid(grid);
   }
 
   async function open_file_externally(grid, pane, action) {
@@ -1313,17 +1436,74 @@
     }
   }
 
-  function mount_file_pane(grid, view, pane) {
+  function mount_file_pane(grid, view, pane, target, side) {
     pane.page_id = view.active_page.id;
-    const anchor = largest_pane(view);
-    insert_into_layout(view, pane, anchor, 'bottom');
+    insert_into_layout(view, pane, target || largest_pane(view), side || 'bottom');
     view.panes.push(pane);
     view.pane_grid.appendChild(pane.element);
     relayout_view(grid, view);
   }
 
+  function file_groups_on_page(view) {
+    return view.panes.filter((pane) => pane.kind === 'file' && !pane.disposed && pane.page_id === view.active_page.id);
+  }
+
+  // The group that was used last on the page, else its first one.
   function file_group(view) {
-    return view.panes.find((pane) => pane.kind === 'file' && !pane.disposed && pane.page_id === view.active_page.id) || null;
+    const groups = file_groups_on_page(view);
+    return groups.includes(view.active_page.active_group) ? view.active_page.active_group : groups[0] || null;
+  }
+
+  // The first group of a page has no id, which keeps the layout keys saved by earlier builds valid.
+  function new_group_id(view) {
+    if (file_groups_on_page(view).length === 0) return null;
+    const used = new Set(view.panes.map((pane) => pane.group_id));
+    let number = 1;
+    while (used.has(`g${number}`)) number += 1;
+    return `g${number}`;
+  }
+
+  // Agents never land on the Files page unless the user splits a terminal there.
+  function agent_page(view) {
+    if (view.active_page.kind !== 'files') return view.active_page;
+    let page = view.pages.find((item) => item.kind !== 'files');
+    if (!page) {
+      page = make_page(view);
+      view.pages.unshift(page);
+    }
+    return page;
+  }
+
+  // A tree click: the file goes to the workspace's Files page and replaces the preview tab there,
+  // so looking through files never disturbs the agents. pin keeps the tab (double-click).
+  function open_in_file_page(grid, view, rel_path, root_path, pin) {
+    const root = root_path || (view.file_panel && view.file_panel.current_root ? view.file_panel.current_root() : view.workspace.path);
+    let page = view.pages.find((item) => item.kind === 'files');
+    if (!page) {
+      page = make_page(view);
+      page.kind = 'files';
+      page.name = 'Files';
+      view.pages.push(page);
+    }
+    const pane = open_file_in_grid(grid, view.workspace, rel_path, root, page, { any_group: true, preview: !pin });
+    if (pane) select_tab(grid, pane);
+    return pane;
+  }
+
+  // The Files page goes away with its last pane, so an unused page does not linger.
+  function drop_empty_files_page(grid, view, page_id) {
+    const page = view.pages.find((item) => item.id === page_id);
+    if (!page || page.kind !== 'files' || page.closing || view.disposed) return;
+    if (view.panes.some((pane) => pane.page_id === page.id && !pane.disposed)) return;
+    const index = view.pages.indexOf(page);
+    view.pages.splice(index, 1);
+    if (!view.pages.length) view.pages.push(make_page(view));
+    if (view.active_page === page) {
+      select_page(grid, view, view.pages[Math.max(0, index - 1)]);
+    } else {
+      render_tabs(grid, view);
+      save_view_layout(grid, view);
+    }
   }
 
   function render_file_tabs(grid, pane) {
@@ -1332,9 +1512,11 @@
       const button = create_el('button', 'tf-file-tab');
       button.type = 'button';
       button.textContent = file.name + (file.dirty ? ' *' : '');
-      button.title = `${file.root} / ${file.path}`;
+      button.title = `${file.root} / ${file.path}\nDrag to the edge of a file to view them side by side. Double-click keeps this tab.`;
       button.draggable = true;
+      button.classList.toggle('tf-file-tab-preview', file.preview === true);
       button.addEventListener('dragstart', (event) => {
+        dragged_tab = { pane, file };
         event.dataTransfer.setData(INTERNAL_PATH_TYPE, JSON.stringify({ root_path: file.root, rel_path: file.path }));
         event.dataTransfer.setData('text/plain', file.path);
         event.dataTransfer.effectAllowed = 'copy';
@@ -1342,6 +1524,7 @@
       button.classList.toggle('tf-file-tab-active', index === pane.active);
       button.addEventListener('click', (event) => {
         event.stopPropagation();
+        if (index === pane.active && file.loaded) return;
         void activate_file(grid, pane, index, true);
       });
       const close = create_el('button', 'tf-file-tab-close', '×');
@@ -1364,6 +1547,7 @@
   function close_active_file(grid, pane) {
     if (!pane.files.length) {
       remove_pane(grid, pane);
+      drop_empty_files_page(grid, pane.view, pane.page_id);
       notify_grid(grid);
       return;
     }
@@ -1394,6 +1578,7 @@
       pane.files.splice(current, 1);
       if (pane.files.length === 0) {
         remove_pane(grid, pane);
+        drop_empty_files_page(grid, pane.view, pane.page_id);
         save_view_layout(grid, pane.view);
         notify_grid(grid);
         return;
@@ -1626,6 +1811,7 @@
     if (file.editable !== false) {
       text.addEventListener('input', () => {
         file.edit_generation = (file.edit_generation || 0) + 1;
+        file.preview = false; // Edited files keep their tab instead of being replaced by the next click.
         file.buffer = file.line_ending === '\r\n' ? text.value.replace(/\r?\n/g, '\r\n') : text.value;
         file.dirty = file.buffer !== file.disk;
         status.textContent = file.dirty ? 'edited' : 'saved';
@@ -1679,6 +1865,7 @@
       if (!save_still_current(file, epoch)) return { saved: false, cancelled: true };
       const outcome = await window.hub.files.write(file.root, file.path, snapshot, file.mtime, file.loaded_bytes);
       if (!save_still_current(file, epoch)) return { saved: false, cancelled: true };
+      pane = file.owner || pane; // The tab may have been dragged to another group during the write.
       if (outcome && outcome.conflict) {
         file.conflict = true;
         file.dirty = true;
@@ -1710,6 +1897,7 @@
       return { saved: true };
     } catch (error) {
       if (!save_still_current(file, epoch)) return { saved: false, cancelled: true };
+      pane = file.owner || pane;
       file.dirty = true;
       file.save_error = true;
       if (file.status_el) file.status_el.textContent = 'error';
@@ -1744,10 +1932,11 @@
       file.save_error = false;
       file.dirty = false;
       file.loaded = false;
-      pane.active = Math.max(0, pane.files.indexOf(file));
+      const owner = file.owner || pane;
+      owner.active = Math.max(0, owner.files.indexOf(file));
       clear_banner(grid);
-      render_file_tabs(grid, pane);
-      void load_file_content(grid, pane);
+      render_file_tabs(grid, owner);
+      void load_file_content(grid, owner);
     });
     meta.append(discard);
   }
@@ -1795,38 +1984,65 @@
     if (pane.files[pane.active] !== file) void activate_file(grid, pane, pane.files.indexOf(file), false);
   }
 
-  // One file region per page. Further files become tabs in that region.
-  function open_file_in_grid(grid, workspace, rel_path, root_path, page) {
+  // Opens a file as a tab of a file group on a page. Returns that group.
+  //   options.group_id  this exact group, created when missing (a saved tab, a drop into a split)
+  //   options.any_group an already open copy anywhere on the page is shown instead of opening another
+  //   options.preview   the tab replaces the group's preview tab, unless that file has unsaved edits
+  function open_file_in_grid(grid, workspace, rel_path, root_path, page, options) {
+    const opts = options || {};
     const view = grid.views.get(workspace.id);
-    if (!view || typeof rel_path !== 'string' || rel_path === '') return;
+    if (!view || typeof rel_path !== 'string' || rel_path === '') return null;
     page = page || view.active_page;
-    if (page.closing || !view.pages.includes(page)) return;
+    if (page.closing || !view.pages.includes(page)) return null;
     const visible_page = view.active_page;
     view.active_page = page;
     const root = root_path || (view.file_panel && view.file_panel.current_root ? view.file_panel.current_root() : workspace.path);
-    let pane = file_group(view);
+    const same_file = (file) => file.root === root && file.path === rel_path;
+    const exact_group = 'group_id' in opts;
+    let pane = null;
+    if (opts.any_group) pane = file_groups_on_page(view).find((group) => group.files.some(same_file)) || null;
     if (!pane) {
-      pane = build_file_pane(grid, view, { name: 'Files', path: rel_path });
+      pane = exact_group
+        ? file_groups_on_page(view).find((group) => group.group_id === opts.group_id) || null
+        : file_group(view);
+    }
+    if (!pane) {
+      pane = build_file_pane(grid, view, { name: 'Files', path: rel_path, group_id: exact_group ? opts.group_id : new_group_id(view) });
       mount_file_pane(grid, view, pane);
     }
-    let index = pane.files.findIndex((file) => file.root === root && file.path === rel_path);
+    let index = pane.files.findIndex(same_file);
+    const already_showing = index !== -1 && index === pane.active && pane.files[index].loaded;
     if (index === -1) {
-      pane.files.push({
+      const entry = {
         root,
         path: rel_path,
         name: rel_path.split(/[\\/]/).pop() || rel_path,
         dirty: false,
         loaded: false,
-      });
-      index = pane.files.length - 1;
+        preview: opts.preview === true,
+        owner: pane,
+      };
+      const replaced = opts.preview && !exact_group ? pane.files.findIndex((file) => file.preview && !file_is_busy(file)) : -1;
+      if (replaced !== -1) {
+        pane.files[replaced].save_epoch = (pane.files[replaced].save_epoch || 0) + 1;
+        pane.files[replaced] = entry;
+        index = replaced;
+      } else {
+        pane.files.push(entry);
+        index = pane.files.length - 1;
+      }
       // The file panel already watches the workspace. Elsewhere only this one folder is watched.
       if (!path_is_under(workspace.path, root)) window.hub.files.watch(root, { recursive: false }).catch(() => {});
+    } else if (!opts.preview) {
+      pane.files[index].preview = false;
     }
-    void activate_file(grid, pane, index, true);
+    if (already_showing) render_file_tabs(grid, pane);
+    else void activate_file(grid, pane, index, true);
     view.active_page = visible_page;
     relayout_view(grid, view);
     if (visible_page === page) select_tab(grid, pane);
     if (!view.hold_layout) save_view_layout(grid, view);
+    return pane;
   }
 
   // ---- tiled layout ----
@@ -1841,7 +2057,10 @@
   const FULL_RECT = { x: 0, y: 0, w: 1, h: 1 };
 
   function pane_key(pane) {
-    if (pane.kind === 'file') return pane.page_id === 'page-1' ? 'file-group' : `file-group:${pane.page_id}`;
+    if (pane.kind === 'file') {
+      if (pane.group_id) return `file-group:${pane.page_id}:${pane.group_id}`;
+      return pane.page_id === 'page-1' ? 'file-group' : `file-group:${pane.page_id}`;
+    }
     return pane.record_id || pane.slot_id || `pane-${pane.pane_id}`;
   }
 
@@ -1863,9 +2082,16 @@
       files_width: view.files_width,
       tree: serialize_layout(view.layout),
       active_page: view.active_page.id,
-      pages: view.pages.map((page) => ({ id: page.id, name: page.name, tree: serialize_layout(page.layout) })),
+      pages: view.pages.map((page) => ({ id: page.id, name: page.name, kind: page.kind, tree: serialize_layout(page.layout) })),
       file_tabs: view.panes.filter((pane) => pane.kind === 'file').flatMap((pane) =>
-        pane.files.map((file) => ({ root: file.root, path: file.path, page_id: pane.page_id }))),
+        pane.files.map((file, index) => ({
+          root: file.root,
+          path: file.path,
+          page_id: pane.page_id,
+          group: pane.group_id,
+          preview: file.preview === true,
+          active: index === pane.active,
+        }))),
     });
   }
 
@@ -1950,7 +2176,7 @@
         if (event.key === 'Escape') { overlay.hidden = true; return; }
         if (event.key === 'Enter') {
           const chosen = list.querySelector('.tg-quick-item');
-          if (chosen) open_file_in_grid(grid, view.workspace, chosen.dataset.path, live_root());
+          if (chosen) open_in_file_page(grid, view, chosen.dataset.path, live_root());
           overlay.hidden = true;
         }
       });
@@ -1962,7 +2188,7 @@
           row.type = 'button';
           row.dataset.path = item.rel;
           row.addEventListener('click', () => {
-            open_file_in_grid(grid, view.workspace, item.rel, live_root());
+            open_in_file_page(grid, view, item.rel, live_root());
             overlay.hidden = true;
           });
           list.append(row);
@@ -2434,6 +2660,10 @@
     if (previous && previous !== pane) previous.element.classList.remove('tg-active');
     grid.active_pane = pane;
     pane.view.selected = pane;
+    if (pane.kind === 'file') {
+      const page = pane.view.pages.find((item) => item.id === pane.page_id);
+      if (page) page.active_group = pane;
+    }
     pane.element.classList.add('tg-active');
     render_tabs(grid, pane.view);
     sync_file_context(pane.view, pane);
@@ -2601,8 +2831,10 @@
     await wait_for_attach(view);
     if (view.disposed) return;
 
-    const page = options && options.page_id ? view.pages.find((item) => item.id === options.page_id) : view.active_page;
+    // A new session asked for while viewing files goes to the agents, not onto the Files page.
+    const page = options && options.page_id ? view.pages.find((item) => item.id === options.page_id) : agent_page(view);
     if (!page || page.closing) return;
+    if (page !== view.active_page && !(options && options.page_id)) select_page(grid, view, page);
     const want_worktree = Boolean(options && options.use_worktree === true);
     clear_banner(grid);
     const failures = [];
@@ -2686,7 +2918,7 @@
       pane.provider_id = record.provider_id || null;
       pane.resume_mode = record.resume_mode || null;
       pane.resume_session_id = record.claude_session_id || null;
-      mount_pane(grid, view, pane);
+      mount_pane(grid, view, pane, agent_page(view));
       try {
         const resume_id = record.resume_mode === 'unverified' ? null : (record.claude_session_id || null);
         if (record.agent_id === 'claude' && !record.claude_session_id) {
@@ -2788,6 +3020,7 @@
     if (pane.disposed) return null;
     const terminal_id = pane.terminal_id;
     remove_pane(grid, pane);
+    drop_empty_files_page(grid, pane.view, pane.page_id);
     notify_grid(grid);
     if (!terminal_id) return null;
     const result = await kill_quietly(terminal_id);
