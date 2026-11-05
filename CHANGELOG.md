@@ -7,6 +7,11 @@
 - Preserve BOM/CRLF when editing; preview unsupported encodings and mixed line endings without rewriting them.
 - Rebuild and verify source/native payload hashes before staging app/, and verify installer checksums before replacing an existing installation.
 - Add Windows PR checks for editor regressions, native lifecycle, repeated process exits, build and sandbox install/rollback.
+- Reload the window after a renderer crash with terminals still running; a crashed or unresponsive window can always be closed.
+- Offer Discard my edits when a save fails, so a read-only file can no longer block closing its tab or the app. A blocked close now shows the file it is waiting for.
+- Open tabs follow changes on disk, keeping the caret and scroll position. Unsaved edits are never replaced, and saving no longer recreates a file that was deleted.
+- Open file and page drops open a file from outside the workspace in place instead of copying it to `.agentsense-import`.
+- A saved session that cannot be restored now shows its error and the Restart and Forget buttons instead of the launch page.
 
 ## 1.0.0
 

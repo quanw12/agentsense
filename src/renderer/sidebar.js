@@ -609,6 +609,9 @@
       set_counts,
       set_sessions,
       get_selected,
+      select: (workspace_id) => {
+        if (workspace_id !== selected_id) apply_selection(workspace_id);
+      },
       add_folder_path,
       apply_status,
       get_statuses: () => Object.fromEntries(status_by_terminal),

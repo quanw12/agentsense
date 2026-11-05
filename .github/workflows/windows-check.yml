@@ -21,6 +21,7 @@ jobs:
       - run: npm run check:pty
       - run: npx electron scripts/check_app_shutdown.js
       - run: npx electron scripts/check_editor_format.js
+      - run: npx electron scripts/check_recovery.js
       - run: npx electron scripts/codex_review_regressions.js
       - run: npx electron scripts/codex_review_editor_lifecycle.js
       - run: npx electron scripts/codex_review_conflicted_quit.js
