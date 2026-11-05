@@ -22,6 +22,7 @@
     if (!workspace || !workspace.id) throw new Error('init_file_panel: workspace is required');
 
     const on_open_file = typeof settings.on_open_file === 'function' ? settings.on_open_file : () => {};
+    const on_pin_file = typeof settings.on_pin_file === 'function' ? settings.on_pin_file : () => {};
     const on_error = typeof settings.on_error === 'function' ? settings.on_error : () => {};
 
     let disposed = false;
@@ -297,9 +298,9 @@
       row.classList.toggle('fp-selected', selected_path === rel_path);
       row.setAttribute('aria-selected', String(selected_path === rel_path));
       row.draggable = true;
-      row.title = 'Click to open, drag onto a terminal to paste its path';
+      row.title = 'Click to view, double-click to keep the tab. Drag onto a terminal to paste its path, or to the edge of a file to view them side by side.';
       row.addEventListener('dragstart', (event) => {
-        event.dataTransfer.setData(INTERNAL_PATH_TYPE, JSON.stringify({ root_path: workspace.path, rel_path }));
+        event.dataTransfer.setData(INTERNAL_PATH_TYPE, JSON.stringify({ root_path, rel_path }));
         event.dataTransfer.setData('text/plain', rel_path);
         event.dataTransfer.effectAllowed = 'copy';
       });
@@ -314,6 +315,9 @@
         if (disposed) return;
         select(rel_path);
         on_open_file(rel_path);
+      });
+      row.addEventListener('dblclick', () => {
+        if (!disposed) on_pin_file(rel_path);
       });
       row.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); row.click(); }

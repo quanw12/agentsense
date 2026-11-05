@@ -67,21 +67,23 @@ async function run(window) {
   await js(`document.querySelector('.tg-view-active .fp-row[data-path="brief.txt"]').click()`);
   await until(() => js('Boolean(document.querySelector(".tg-view-active .tf-text"))'), 'text preview');
   await js(`document.querySelector('.tg-view-active .fp-row[data-path="brief.txt"]').click()`);
-  check('opening a file creates one reusable tab', await js('document.querySelectorAll(".tg-view-active .tg-file-pane").length === 1 && document.querySelector(".tg-view-active .tg-tabs").hidden'));
+  check('opening a file creates one reusable tab on the Files page', await js(`document.querySelectorAll(".tg-view-active .tg-file-pane").length === 1 && !document.querySelector(".tg-view-active .tg-tabs").hidden &&
+    document.querySelector('.tg-view-active [role=tab][aria-selected=true]').textContent === 'Files'`));
   check('file contents render as text', await js(`(() => {
     const node = document.querySelector('.tg-view-active .tf-text');
     return ((node && (node.value || node.textContent)) || '').includes('Drag this file');
   })()`));
   check('tab view control is gone', await js('!document.querySelector("[data-action=toggle_mode]")'));
-  const bounds_before = await js(`JSON.stringify(Array.from(document.querySelectorAll('.tg-view-active .tg-pane')).map(p => {
+  await js(`document.querySelectorAll('.tg-view-active [role=tab]')[0].click()`);
+  const bounds_before = await js(`JSON.stringify(Array.from(document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])')).map(p => {
     const r = p.getBoundingClientRect();
     return { id: p.id, w: Math.round(r.width), h: Math.round(r.height), hidden: p.hidden };
   }))`);
   for (let i = 0; i < 20; i += 1) {
-    await js(`document.querySelectorAll('.tg-view-active .tg-pane-titlebar')[${i % 3}].click()`);
+    await js(`document.querySelectorAll('.tg-view-active .tg-pane:not([hidden]) .tg-pane-titlebar')[${i % 2}].click()`);
   }
-  await js(`document.querySelector('.tg-view-active .tg-pane-titlebar').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}));`);
-  const bounds_after = await js(`JSON.stringify(Array.from(document.querySelectorAll('.tg-view-active .tg-pane')).map(p => {
+  await js(`document.querySelector('.tg-view-active .tg-pane:not([hidden]) .tg-pane-titlebar').dispatchEvent(new MouseEvent('dblclick', {bubbles:true}));`);
+  const bounds_after = await js(`JSON.stringify(Array.from(document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])')).map(p => {
     const r = p.getBoundingClientRect();
     return { id: p.id, w: Math.round(r.width), h: Math.round(r.height), hidden: p.hidden };
   }))`);
@@ -90,7 +92,9 @@ async function run(window) {
   check('focus and double-click keep every pane visible', after.length === before.length && after.every((pane) => pane.hidden === false));
   check('focus does not move pane bounds by more than 1px', after.every((pane, index) => Math.abs(pane.w - before[index].w) <= 1 && Math.abs(pane.h - before[index].h) <= 1));
   await js(`document.querySelector('.tg-root').dispatchEvent(new KeyboardEvent('keydown', {key:'Tab', ctrlKey:true, bubbles:true}));`);
-  check('Ctrl+Tab selects another agent without hiding panes', await js('document.querySelectorAll(".tg-view-active .tg-pane:not([hidden])").length === 3'));
+  check('Ctrl+Tab moves to the next page', await js(`document.querySelector('.tg-view-active [role=tab][aria-selected=true]').textContent === 'Files'`));
+  await js(`document.querySelectorAll('.tg-view-active [role=tab]')[0].click()`);
+  check('coming back shows every agent again', await js('document.querySelectorAll(".tg-view-active .tg-pane:not([hidden])").length === 2'));
   await until(() => js('Number(document.querySelector(".tg-view-active .tg-pane[data-terminal-id]").dataset.cols) > 0'), 'initial terminal fit');
   const before_cols = await js('Number(document.querySelector(".tg-view-active .tg-pane[data-terminal-id]").dataset.cols)');
   await js('document.querySelector("[data-action=toggle_files]").click()');
@@ -190,7 +194,7 @@ async function run(window) {
   check('new page hides the previous group and shows page navigation', await js(`
     document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 0 &&
     !document.querySelector('.tg-view-active .tg-tabs').hidden &&
-    document.querySelectorAll('.tg-view-active [role=tab]').length === 2`));
+    document.querySelectorAll('.tg-view-active [role=tab]').length === 3`));
   await js(`await window.__grid.launch_seats(testWorkspace, [{agent_id:'terminal', label:'Terminal', command:'powershell.exe'}], {});`);
   check('terminal on a new page fills the available area', await js(`(() => {
     const pane = document.querySelector('.tg-view-active .tg-pane:not([hidden])');
@@ -200,17 +204,18 @@ async function run(window) {
   })()`));
   await js(`document.querySelector('[data-action=toggle_files]').click();
     document.querySelector('.tg-view-active .fp-row[data-path="brief.txt"]').click();`);
-  await until(() => js(`document.querySelectorAll('.tg-view-active .tg-file-pane').length === 2`), 'file in second page');
-  check('each page has its own files in the same workspace', await js(`document.querySelectorAll('.tg-view-active .tg-file-pane:not([hidden])').length === 1`));
+  await until(() => js(`document.querySelector('.tg-view-active [role=tab][aria-selected=true]').textContent === 'Files'`), 'tree click goes to the Files page');
+  check('a tree click reuses the one Files page', await js(`document.querySelectorAll('.tg-view-active .tg-file-pane').length === 1 && document.querySelectorAll('.tg-view-active [role=tab]').length === 3`));
   await js(`document.querySelectorAll('.tg-view-active [role=tab]')[0].click()`);
-  check('returning to first page restores its panes', await js(`document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 4`));
+  check('returning to first page restores its panes', await js(`document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 3`));
   await contents.reload();
-  await until(() => js(`Boolean(window.__grid && document.querySelectorAll('.tg-view-active [role=tab]').length === 2 && document.querySelectorAll('.tg-view-active .tg-pane').length === 6)`), 'page restore');
-  check('page membership survives reload without respawning', pty.list_terminals().length === 4 && await js(`document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 4`));
-  await js(`document.querySelectorAll('.tg-view-active [role=tab]')[1].click();
-    document.querySelectorAll('.tg-view-active .tg-tab-close')[1].click()`);
-  await until(() => js(`document.querySelector('.tg-view-active .tg-tabs').hidden`), 'page closed');
+  await until(() => js(`Boolean(window.__grid && document.querySelectorAll('.tg-view-active [role=tab]').length === 3 && document.querySelectorAll('.tg-view-active .tg-pane').length === 5)`), 'page restore');
+  check('page membership survives reload without respawning', pty.list_terminals().length === 4 && await js(`document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 3`));
+  await js(`document.querySelectorAll('.tg-view-active [role=tab]')[2].click();
+    document.querySelectorAll('.tg-view-active .tg-tab-close')[2].click()`);
+  await until(() => js(`document.querySelectorAll('.tg-view-active [role=tab]').length === 2`), 'page closed');
   check('closing a page ends only its sessions', pty.list_terminals().length === 3);
+  await js(`document.querySelectorAll('.tg-view-active [role=tab]')[0].click()`);
   // Drive the real divider with pointer events, then verify that pane bounds still cover the grid.
   await js(`(() => {
     const divider = document.querySelector('.tg-view-active .tg-divider');

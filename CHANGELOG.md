@@ -12,6 +12,8 @@
 - Open tabs follow changes on disk, keeping the caret and scroll position. Unsaved edits are never replaced, and saving no longer recreates a file that was deleted.
 - Open file and page drops open a file from outside the workspace in place instead of copying it to `.agentsense-import`.
 - A saved session that cannot be restored now shows its error and the Restart and Forget buttons instead of the launch page.
+- Clicking a file opens it on a separate Files page, in a preview tab the next click replaces. Editing or double-clicking keeps the tab.
+- Drag a tab or tree row to the edge of an open file to view files side by side, or onto another group to move it there. Groups and tabs survive a restart.
 
 ## 1.0.0
 
