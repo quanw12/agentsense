@@ -169,7 +169,9 @@ providers.set_file_for_tests(null);
   fs.writeFileSync(path.join(root, 'a.txt'), 'original A');
   const small = files.read_file(root, 'a.txt');
   fs.writeFileSync(path.join(root, 'a.txt'), 'EXTERNAL DISK UPDATE');
-  const conflict = await files.write_text(root, 'a.txt', 'MY UNSAVED EDIT', small.mtime, small.loaded_bytes);
+  // A fast disk can finish both writes inside the conflict check's 1 ms tolerance. Make the update unmistakable.
+  fs.utimesSync(path.join(root, 'a.txt'), new Date(), new Date(small.mtime + 5000));
+  const conflict =await files.write_text(root, 'a.txt', 'MY UNSAVED EDIT', small.mtime, small.loaded_bytes);
   check('an external update conflicts instead of being overwritten', conflict.conflict === true && fs.readFileSync(path.join(root, 'a.txt'), 'utf8') === 'EXTERNAL DISK UPDATE');
 
   const limiter = create_limiter({ limit: 3, lock_ms: 1000 });

@@ -273,7 +273,8 @@ async function run(window) {
     };
     await js(`document.querySelector('.tg-view-active .tg-page-empty [data-action=open_file]').click()`);
     await until(() => Boolean(picker_options), 'native file picker called');
-    check('file picker starts in this workspace and cancellation keeps page empty', picker_options.defaultPath === fixture &&
+    // The picker gets the real path. A CI temp folder can be spelled with a short 8.3 name.
+    check('file picker starts in this workspace and cancellation keeps page empty', picker_options.defaultPath === fs.realpathSync.native(fixture) &&
       await js(`document.querySelectorAll('.tg-view-active .tg-pane:not([hidden])').length === 0`));
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path.join(fixture, 'brief.txt')] });
     await js(`document.querySelector('.tg-view-active .tg-page-empty [data-action=open_file]').click()`);
