@@ -26,6 +26,7 @@
 
     let disposed = false;
     let root_path = workspace.path;
+    let watched_root = null;
     let root_label = workspace.name || 'Workspace';
     let unsubscribe_watch = () => {};
     const branch_children = new Map(); // rel dir -> rendered wrapper element
@@ -439,7 +440,17 @@
       for (const key of Object.keys(children_open)) delete children_open[key];
       selected_path = null;
       load_root_rebuild();
-      if (window.hub.files.watch) window.hub.files.watch(root_path).catch(() => {});
+      start_watch();
+    }
+
+    // Change events name the real folder, which differs from root_path behind a junction or an 8.3 short name.
+    function start_watch() {
+      if (!window.hub.files.watch) return;
+      const requested = root_path;
+      watched_root = null;
+      window.hub.files.watch(requested).then((result) => {
+        if (requested === root_path && result && result.root) watched_root = result.root;
+      }).catch(() => {});
     }
 
     function dispose() {
@@ -451,11 +462,12 @@
     }
 
     load_root_rebuild();
-    if (window.hub.files.watch) window.hub.files.watch(root_path).catch(() => {});
+    start_watch();
     if (window.hub.files.on_changed) {
       unsubscribe_watch = window.hub.files.on_changed((payload) => {
         if (disposed || !payload) return;
-        if (payload.root && root_path && String(payload.root).toLowerCase() !== String(root_path).toLowerCase()) return;
+        const current = watched_root || root_path;
+        if (payload.root && current && String(payload.root).toLowerCase() !== String(current).toLowerCase()) return;
         refresh_preserve();
       });
     }
