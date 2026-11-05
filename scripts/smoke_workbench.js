@@ -289,7 +289,8 @@ async function run(window) {
     document.querySelector('.tg-view-active .tg-grid').dispatchEvent(new DragEvent('drop', {dataTransfer:dt,bubbles:true,cancelable:true}));
   })()`);
   await until(() => js(`document.querySelectorAll('.tg-view-active .tg-file-pane:not([hidden]) .tf-file-tab').length === 3`), 'page imports external drop');
-  check('external page drop copies into the workspace and opens the copy', fs.existsSync(path.join(fixture, '.agentsense-import', 'external brief.txt')));
+  check('external page drop opens the original and adds nothing to the workspace', !fs.existsSync(path.join(fixture, '.agentsense-import')) &&
+    await js(`document.querySelector('.tg-view-active .tg-file-pane:not([hidden]) .tf-file-tab-active').title.includes(${JSON.stringify(outside)})`));
   await js(`document.querySelector('.tg-view-active .tg-page-actions [data-action=open_terminal]').click()`);
   await until(() => js(`document.querySelectorAll('.tg-view-active .tg-pane[data-terminal-id]:not([hidden])').length === 1 && Boolean(document.querySelector('.tg-view-active .tg-pane[data-terminal-id]:not([hidden])').dataset.terminalId)`), 'page terminal action');
   const visible_terminals = () => js(`document.querySelectorAll('.tg-view-active .tg-pane[data-terminal-id]:not([hidden])').length`);

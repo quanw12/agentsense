@@ -37,6 +37,7 @@
   const RESIZE_DEBOUNCE_MS = 80; // pty resizes wait until a divider drag settles
   const INTERNAL_PATH_TYPE = 'application/x-agentsense-path'; // file tree row drag (file_panel.js)
   const UI_STORAGE_KEY = 'agentsense.workbench';
+  const FILE_CHECK_DELAY_MS = 100; // groups the change events of one burst before open tabs are compared with disk
 
   function read_ui() {
     try {
@@ -104,6 +105,9 @@
   const LIVE_GRIDS = new Set();
   let hub_subscribed = false;
   let pane_serial = 0;
+  let file_check_timer = 0;
+  let file_check_running = false;
+  let file_check_again = false;
 
   function create_el(tag, class_name, text) {
     const node = document.createElement(tag);
@@ -196,6 +200,9 @@
     // Panes created or closed by the phone (mobile_server.js -> terminals:created / terminals:closed).
     window.hub.terminals.on_created((info) => route_created(info));
     window.hub.terminals.on_closed((terminal_id) => route_closed(terminal_id));
+    // Agents edit files while they are open here. Window focus also covers folders nothing watches (node_modules).
+    if (window.hub.files.on_changed) window.hub.files.on_changed(() => schedule_open_file_check());
+    window.addEventListener('focus', () => schedule_open_file_check());
   }
 
   function route_exit(terminal_id, exit_code) {
@@ -376,6 +383,7 @@
       on_counts_change: callbacks.on_counts_change,
       on_sessions_change: callbacks.on_sessions_change,
       on_new_session_request: callbacks.on_new_session_request,
+      on_attention: callbacks.on_attention,
       views: new Map(),
       active_view: null,
       active_pane: null,
@@ -786,21 +794,30 @@
 
   async function open_paths_in_page(grid, view, page, paths) {
     if (view.disposed || page.closing || !view.pages.includes(page)) return;
-    const external = [];
+    const failures = [];
     for (const path of paths) {
       const rel = relative_under(view.workspace.path, path);
-      if (rel) open_file_in_grid(grid, view.workspace, rel, view.workspace.path, page);
-      else external.push({ path });
-    }
-    if (!external.length) return;
-    const outcome = await window.hub.files.copy_in(view.workspace.path, external);
-    if (view.disposed || page.closing || !view.pages.includes(page)) return;
-    const failures = [];
-    for (const result of outcome.results || []) {
-      if (result.ok) open_file_in_grid(grid, view.workspace, result.rel, view.workspace.path, page);
-      else failures.push(`${result.name}: ${result.message}`);
+      if (rel) {
+        open_file_in_grid(grid, view.workspace, rel, view.workspace.path, page);
+        continue;
+      }
+      // A file from outside the workspace opens where it lives: edits reach the original and the repo stays clean.
+      const { root, name } = split_parent(path);
+      const stat = await window.hub.files.stat(root, name);
+      if (view.disposed || page.closing || !view.pages.includes(page)) return;
+      if (!stat.exists) failures.push(`${name}: file not found`);
+      else if (stat.is_dir) failures.push(`${name}: this is a folder; open a file instead`);
+      else open_file_in_grid(grid, view.workspace, name, root, page);
     }
     if (failures.length) show_banner(grid, `Could not open files: ${failures.join('; ')}`);
+  }
+
+  // C:\dir\a.txt -> { root: 'C:\dir', name: 'a.txt' }. A drive root keeps its separator.
+  function split_parent(file_path) {
+    const text = String(file_path);
+    const index = Math.max(text.lastIndexOf('\\'), text.lastIndexOf('/'));
+    const root = text.slice(0, index);
+    return { root: /^[A-Za-z]:$/.test(root) ? `${root}\\` : root, name: text.slice(index + 1) };
   }
 
   function attach_drop_to_page(grid, view) {
@@ -1367,7 +1384,7 @@
       if (file.dirty || file.conflict) {
         const message = file.conflict
           ? `${file.name} changed on disk. Your edits are still in the editor and were not overwritten.`
-          : `Could not save ${file.name}. The tab was kept.`;
+          : `Could not save ${file.name}. The tab was kept. Fix the problem and close it again, or use Discard my edits.`;
         show_banner(grid, message);
         render_file_tabs(grid, pane);
         return;
@@ -1428,16 +1445,25 @@
     return frame;
   }
 
-  async function load_file_content(grid, pane) {
+  // options.refresh = { generation }: a reload caused by a change on disk. It gives way to anything typed
+  // meanwhile, and keeps the caret, selection, scroll position and focus of the editor it replaces.
+  async function load_file_content(grid, pane, options) {
     const view = pane.view;
+    const refresh = options && options.refresh;
     const file = pane.files && pane.files[pane.active];
     const root_path = file ? file.root : view.workspace.path;
     const rel_path = file ? file.path : pane.path;
     const request = (pane.load_token = (pane.load_token || 0) + 1);
+    let read_done = false;
     try {
       const result = await window.hub.files.read(root_path, rel_path);
+      read_done = true;
       if (pane.disposed || pane.load_token !== request) return;
+      if (refresh && file && (file.dirty || file.conflict || (file.edit_generation || 0) !== refresh.generation)) return;
+      const previous = refresh ? editor_view_state(pane) : null;
       if (file) {
+        file.missing = false;
+        file.save_error = false;
         file.loaded = true;
         file.mtime = result.mtime;
         file.disk = String(result.content || '');
@@ -1461,11 +1487,14 @@
       if (kind === 'text') {
         if (result.truncated) meta.textContent = `${size} (showing the first part, read-only)`;
         paint_text_editor(grid, pane, file, meta);
+        restore_editor_view_state(pane, previous);
+        if (refresh && file && file.status_el) file.status_el.textContent = 'reloaded';
       } else if (kind === 'image') {
         const media = create_el('div', 'tf-media');
         const image = create_el('img', 'tf-image');
         image.alt = pane.name;
-        image.src = result.url;
+        // The query defeats the image cache, which would keep showing the old file after a change on disk.
+        image.src = `${result.url}?v=${Math.round(result.mtime)}`;
         image.addEventListener('load', () => {
           meta.textContent = `${size} · ${image.naturalWidth} × ${image.naturalHeight}`;
         });
@@ -1497,9 +1526,86 @@
       }
     } catch (error) {
       if (pane.disposed) return;
+      if (file && !read_done) file.missing = true;
       pane.body.textContent = '';
       pane.body.append(file_unsupported(grid, pane, `Could not preview this file: ${error_text(error)}`));
     }
+  }
+
+  function editor_view_state(pane) {
+    const editor = pane.body.querySelector('.tf-editor');
+    if (!editor) return null;
+    return {
+      top: editor.scrollTop,
+      left: editor.scrollLeft,
+      start: editor.selectionStart,
+      end: editor.selectionEnd,
+      focused: document.activeElement === editor,
+    };
+  }
+
+  function restore_editor_view_state(pane, state) {
+    const editor = pane.body.querySelector('.tf-editor');
+    if (!editor || !state) return;
+    if (state.focused) editor.focus();
+    editor.setSelectionRange(state.start, state.end);
+    editor.scrollTop = state.top;
+    editor.scrollLeft = state.left;
+  }
+
+  function schedule_open_file_check() {
+    if (file_check_timer) return;
+    file_check_timer = window.setTimeout(() => {
+      file_check_timer = 0;
+      void check_open_files();
+    }, FILE_CHECK_DELAY_MS);
+  }
+
+  // Each pane shows one file; the others reload anyway when their tab is activated.
+  async function check_open_files() {
+    if (file_check_running) {
+      file_check_again = true;
+      return;
+    }
+    file_check_running = true;
+    try {
+      for (const grid of LIVE_GRIDS) {
+        for (const view of Array.from(grid.views.values())) {
+          for (const pane of view.panes.slice()) {
+            if (pane.kind !== 'file' || pane.disposed) continue;
+            const file = pane.files[pane.active];
+            if (file) await refresh_open_file(grid, pane, file);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('checking open files failed:', error_text(error));
+    } finally {
+      file_check_running = false;
+      if (file_check_again) {
+        file_check_again = false;
+        schedule_open_file_check();
+      }
+    }
+  }
+
+  // Unsaved edits and our own in-flight saves are never replaced; a real clash still surfaces as a save conflict.
+  function file_is_busy(file) {
+    return file.dirty || file.conflict || file.closing || file.save_timer || file.saves_in_flight > 0;
+  }
+
+  async function refresh_open_file(grid, pane, file) {
+    if ((!file.loaded && !file.missing) || file_is_busy(file)) return;
+    const stat = await window.hub.files.stat(file.root, file.path);
+    if (pane.disposed || pane.files[pane.active] !== file || file_is_busy(file)) return;
+    if (!stat.exists) {
+      if (file.missing) return;
+      file.missing = true;
+      await load_file_content(grid, pane);
+      return;
+    }
+    if (!file.missing && Math.abs(stat.mtime - file.mtime) <= 1) return;
+    await load_file_content(grid, pane, { refresh: { generation: file.edit_generation || 0 } });
   }
 
   function paint_text_editor(grid, pane, file, meta) {
@@ -1516,7 +1622,7 @@
     const status = create_el('span', 'tf-save', file.conflict ? 'conflict' : (file.dirty ? 'edited' : 'saved'));
     meta.append(status);
     file.status_el = status;
-    if (file.conflict) ensure_discard_button(grid, pane, file);
+    if (file.conflict || file.save_error) ensure_discard_button(grid, pane, file);
     if (file.editable !== false) {
       text.addEventListener('input', () => {
         file.edit_generation = (file.edit_generation || 0) + 1;
@@ -1541,8 +1647,13 @@
   function enqueue_save(grid, pane, file, snapshot, generation) {
     const epoch = file.save_epoch || 0;
     const previous = file.save_tail || Promise.resolve();
+    file.saves_in_flight = (file.saves_in_flight || 0) + 1;
     const run = previous.then(() => perform_save(grid, pane, file, snapshot, generation, epoch));
-    file.save_tail = run.then(() => null, () => null);
+    const settle = () => {
+      file.saves_in_flight -= 1;
+      return null;
+    };
+    file.save_tail = run.then(settle, settle);
     return run;
   }
 
@@ -1573,11 +1684,14 @@
         file.dirty = true;
         if (file.buffer == null) file.buffer = snapshot;
         if (file.status_el) file.status_el.textContent = 'conflict';
-        show_banner(grid, `${file.name} changed on disk. Your edits are still in the editor and were not overwritten.`);
+        show_banner(grid, outcome.deleted
+          ? `${file.name} was deleted on disk. Your edits are still in the editor and the file was not recreated.`
+          : `${file.name} changed on disk. Your edits are still in the editor and were not overwritten.`);
         ensure_discard_button(grid, pane, file);
         render_file_tabs(grid, pane);
         return { saved: false, conflict: true };
       }
+      clear_save_error(file);
       file.mtime = outcome.mtime;
       file.loaded_bytes = outcome.size;
       const newer = file.buffer !== snapshot || (file.edit_generation || 0) !== generation;
@@ -1597,10 +1711,21 @@
     } catch (error) {
       if (!save_still_current(file, epoch)) return { saved: false, cancelled: true };
       file.dirty = true;
+      file.save_error = true;
       if (file.status_el) file.status_el.textContent = 'error';
       show_banner(grid, `Could not save ${file.name}: ${error_text(error)}`);
+      ensure_discard_button(grid, pane, file);
       return { saved: false, error: true };
     }
+  }
+
+  // A later save worked (say the file stopped being read-only), so the way out is no longer needed.
+  function clear_save_error(file) {
+    if (!file.save_error) return;
+    file.save_error = false;
+    const meta = file.status_el && file.status_el.parentElement;
+    const discard = meta && meta.querySelector('.tf-discard');
+    if (discard) discard.remove();
   }
 
   function ensure_discard_button(grid, pane, file) {
@@ -1616,9 +1741,12 @@
         file.save_timer = 0;
       }
       file.conflict = false;
+      file.save_error = false;
       file.dirty = false;
       file.loaded = false;
       pane.active = Math.max(0, pane.files.indexOf(file));
+      clear_banner(grid);
+      render_file_tabs(grid, pane);
       void load_file_content(grid, pane);
     });
     meta.append(discard);
@@ -1633,23 +1761,38 @@
         for (const file of pane.files) {
           if (file.editable === false) continue;
           if (file.conflict) {
-            held.push(file);
-            ensure_discard_button(grid, pane, file);
+            held.push({ pane, file });
             continue;
           }
           if (!file.dirty) continue;
-          pending.push(flush_editor(grid, pane, file).then((result) => ({ file, result })));
+          pending.push(flush_editor(grid, pane, file).then((result) => ({ pane, file, result })));
         }
       }
     }
     const finished = await Promise.all(pending);
-    for (const { file, result } of finished) {
-      if (!result || !result.saved || file.dirty || file.conflict) held.push(file);
+    for (const { pane, file, result } of finished) {
+      if (!result || !result.saved || file.dirty || file.conflict) held.push({ pane, file });
     }
     if (held.length === 0) return { ok: true };
-    const names = [...new Set(held.map((file) => file.name))].join(', ');
+    const names = [...new Set(held.map(({ file }) => file.name))].join(', ');
+    reveal_held_file(grid, held[0]);
+    for (const { pane, file } of held) {
+      if (file.conflict || file.save_error) ensure_discard_button(grid, pane, file);
+    }
     show_banner(grid, `Close cancelled. Keep, save, or discard unsaved edits in: ${names}`);
     return { ok: false, blocked: names };
+  }
+
+  // A blocked close must show why, wherever the file is: another workspace, another page, another tab,
+  // or behind the launch page, which hides the banner too.
+  function reveal_held_file(grid, { pane, file }) {
+    try {
+      grid.on_attention(pane.view.workspace);
+    } catch (error) {
+      console.error('on_attention failed:', error);
+    }
+    select_tab(grid, pane);
+    if (pane.files[pane.active] !== file) void activate_file(grid, pane, pane.files.indexOf(file), false);
   }
 
   // One file region per page. Further files become tabs in that region.
@@ -1676,6 +1819,8 @@
         loaded: false,
       });
       index = pane.files.length - 1;
+      // The file panel already watches the workspace. Elsewhere only this one folder is watched.
+      if (!path_is_under(workspace.path, root)) window.hub.files.watch(root, { recursive: false }).catch(() => {});
     }
     void activate_file(grid, pane, index, true);
     view.active_page = visible_page;
@@ -2568,7 +2713,8 @@
         failures.push(`${pane.name}: ${message}`);
         if (!pane.disposed) {
           set_pane_status(pane, 'exited', null);
-          pane.term.write(`\r\n[restore failed: ${message}. Use Retry or Forget.]\r\n`);
+          pane.term.write(`\r\n[restore failed: ${message}. Use Restart or Forget.]\r\n`);
+          pane.restore_failed = true;
           pane.record_id = record.record_id;
           ensure_forget_button(grid, pane, record.record_id);
         }
@@ -2583,7 +2729,7 @@
     view.hold_layout = false;
     save_view_layout(grid, view);
     if (failures.length) {
-      show_banner(grid, `Could not restore ${failures.join(' | ')}. The saved session was kept so you can retry.`);
+      show_banner(grid, `Could not restore ${failures.join(' | ')}. Use Restart after fixing it, or Forget to remove the saved session.`);
     }
     return restored;
   }
@@ -2619,6 +2765,11 @@
       if (pane.disposed) {
         note_kept_worktree(grid, await kill_quietly(terminal_id));
         return;
+      }
+      pane.restore_failed = false;
+      if (pane.forget_btn) {
+        pane.forget_btn.remove();
+        pane.forget_btn = null;
       }
       bind_terminal(pane, terminal_id, 'running', null);
       clear_banner(grid);
@@ -2683,6 +2834,7 @@
       on_sessions_change: typeof settings.on_sessions_change === 'function' ? settings.on_sessions_change : () => {},
       on_new_session_request:
         typeof settings.on_new_session_request === 'function' ? settings.on_new_session_request : () => {},
+      on_attention: typeof settings.on_attention === 'function' ? settings.on_attention : () => {},
     });
     show_workspace_in_grid(grid, null);
     load_external_terminals();
@@ -2694,6 +2846,10 @@
       launch_seats: (workspace, seats, options) => launch_seats_in_grid(grid, workspace, seats, options),
       restore_saved_sessions: (workspace) => restore_saved_in_grid(grid, workspace),
       list_sessions: (workspace_id) => list_sessions_in_grid(grid, workspace_id),
+      count_failed_restores: (workspace_id) => {
+        const view = grid.views.get(workspace_id);
+        return view ? view.panes.filter((pane) => pane.restore_failed && !pane.disposed).length : 0;
+      },
       focus_session: (terminal_id) => focus_session_in_grid(grid, terminal_id),
       close_session: (terminal_id) => close_session_in_grid(grid, terminal_id),
       flush_editors: () => flush_dirty_editors(grid),

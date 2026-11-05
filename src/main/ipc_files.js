@@ -194,10 +194,17 @@ function emit_changed(payload) {
   broadcast('files:changed', payload);
 }
 
-function watch_root(root_path) {
+// options.recursive = false watches one folder only, for a file opened from outside the workspace
+// (its folder may be as large as a whole drive). A later recursive request upgrades the watch.
+function watch_root(root_path, options) {
   const root_info = require_root(root_path);
-  if (watches.has(root_info.path)) return { root: root_info.path };
-  const watcher = fs.watch(root_info.path, { recursive: true }, (_event, filename) => {
+  const recursive = !options || options.recursive !== false;
+  const existing = watches.get(root_info.path);
+  if (existing) {
+    if (existing.recursive || !recursive) return { root: root_info.path };
+    unwatch_root(root_info.path);
+  }
+  const watcher = fs.watch(root_info.path, { recursive }, (_event, filename) => {
     const name = filename ? String(filename) : '';
     if (/(^|[\\/])(node_modules|\.git)([\\/]|$)/.test(name)) return;
     const entry = watches.get(root_info.path);
@@ -210,8 +217,20 @@ function watch_root(root_path) {
     if (typeof entry.timer.unref === 'function') entry.timer.unref();
   });
   watcher.on('error', () => unwatch_root(root_info.path));
-  watches.set(root_info.path, { watcher, timer: null });
+  watches.set(root_info.path, { watcher, timer: null, recursive });
   return { root: root_info.path };
+}
+
+// Never throws for a missing file or folder: an open tab asks this after any change on disk.
+async function stat_file(root_path, rel) {
+  const resolved = resolve_inside(root_path, rel || '');
+  if (!resolved) return { exists: false };
+  try {
+    const stat = await fs.promises.stat(resolved.path);
+    return { exists: true, is_dir: stat.isDirectory(), mtime: stat.mtimeMs, size: stat.size };
+  } catch (error) {
+    return { exists: false };
+  }
 }
 
 function unwatch_root(root_path) {
@@ -341,6 +360,8 @@ async function write_text(root_path, rel, content, expected_mtime, loaded_bytes)
   let current = null;
   try { current = await fs.promises.stat(destination.path); } catch (error) { current = null; }
   if (current && current.isDirectory()) throw new Error('that is a folder');
+  // The editor loaded this file, so its absence means it was deleted. Saving must not bring it back.
+  if (!current && expected_mtime != null) return { conflict: true, deleted: true, mtime: null, content: '' };
   if (current && expected_mtime != null && Number.isFinite(Number(expected_mtime))) {
     if (Math.abs(current.mtimeMs - Number(expected_mtime)) > 1) {
       const disk = await fs.promises.readFile(destination.path);
@@ -402,7 +423,8 @@ function register_file_ipc() {
   ipcMain.handle('files:read', (_event, root_path, rel) => read_file(root_path, rel));
   ipcMain.handle('files:write', (_event, root_path, rel, content, expected_mtime, loaded_bytes) => write_text(root_path, rel, content, expected_mtime, loaded_bytes));
   ipcMain.handle('files:search', (_event, root_path, query) => search_files(root_path, query));
-  ipcMain.handle('files:watch', (_event, root_path) => watch_root(root_path));
+  ipcMain.handle('files:watch', (_event, root_path, options) => watch_root(root_path, options));
+  ipcMain.handle('files:stat', (_event, root_path, rel) => stat_file(root_path, rel));
   ipcMain.handle('files:unwatch', (_event, root_path) => unwatch_root(root_path));
   ipcMain.handle('files:render_document', (_event, root_path, rel) => render_document(root_path, rel));
   ipcMain.handle('files:open_external', (_event, root_path, rel) => open_external(root_path, rel));
@@ -417,6 +439,7 @@ module.exports = {
   list_dir,
   read_file,
   write_text,
+  stat_file,
   search_files,
   copy_in,
   import_mapped,

@@ -26,6 +26,7 @@
         on_counts_change: callbacks.on_counts_change,
         on_sessions_change: callbacks.on_sessions_change,
         on_new_session_request: callbacks.on_new_session_request,
+        on_attention: callbacks.on_attention,
       });
     }
     warn_once('init_terminal_grid', 'terminal_grid.js does not define init_terminal_grid; the main area stays empty');
@@ -77,6 +78,12 @@
       on_counts_change: (counts) => sidebar.set_counts(counts),
       on_sessions_change: (sessions_by_workspace) => sidebar.set_sessions(sessions_by_workspace),
       on_new_session_request: (workspace) => show_launch_page(workspace),
+      // The grid has something the user must see in this workspace (a close blocked by unsaved edits).
+      on_attention: (workspace) => {
+        sidebar.select(workspace.id);
+        view_serial += 1;
+        reveal_grid(workspace);
+      },
     });
 
     // Calls a grid method if the grid module provides it; otherwise logs once and does nothing.
@@ -234,7 +241,9 @@
         if (pending_decisions === 0) document.body.dataset.view_settled = 'true';
       }
       if (serial !== view_serial) return;
-      if (count === 0 && restored === 0) {
+      // A failed restore stays on the grid: its message and its Restart and Forget buttons live there.
+      const failed_restores = call_grid('count_failed_restores', [workspace.id]) || 0;
+      if (count === 0 && restored === 0 && failed_restores === 0) {
         show_launch_page(workspace);
       } else {
         reveal_grid(workspace);

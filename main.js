@@ -2,7 +2,7 @@
 // kills every pty when the app quits.
 const path = require('path');
 
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
 const { migrate_legacy_state } = require('./src/main/migrate_state');
 
 // Product identity. setName must run before anything reads userData, because the default userData
@@ -39,8 +39,14 @@ const WINDOW_BACKGROUND = '#000000';
 const ZOOM_STEP = 0.5;
 const ZOOM_MIN = -3;
 const ZOOM_MAX = 5;
+// A close waits this long for the renderer to save its editors before asking what to do.
+const FLUSH_WARN_MS = 8000;
+// More crashes than this inside the window stop the automatic reload, so a crash loop cannot trap the user.
+const CRASH_RELOAD_LIMIT = 3;
+const CRASH_WINDOW_MS = 60000;
 
 let main_window = null;
+let crash_times = [];
 
 function clamp_zoom(level) {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, level));
@@ -115,6 +121,49 @@ function register_shortcuts(target_window) {
   });
 }
 
+function renderer_page() {
+  return path.join(__dirname, 'src', 'renderer', 'index.html');
+}
+
+// The renderer died. Terminals live in this process, so a reload gets every pane back. Only a crash loop asks first.
+async function recover_renderer(target_window, reason) {
+  const now = Date.now();
+  crash_times = crash_times.filter((time) => now - time < CRASH_WINDOW_MS);
+  crash_times.push(now);
+  const looping = crash_times.length > CRASH_RELOAD_LIMIT;
+  if (looping) {
+    const { response } = await dialog.showMessageBox(target_window, {
+      type: 'error',
+      title: 'AgentSense',
+      message: 'The AgentSense window keeps crashing',
+      detail: `Last reason: ${reason}. Your terminals are still running. Quitting stops them; saved sessions come back on the next start.`,
+      buttons: ['Try again', 'Quit AgentSense'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (target_window.isDestroyed()) return;
+    if (response === 1) {
+      target_window.flush_complete = true;
+      target_window.destroy();
+      return;
+    }
+    crash_times = [];
+  }
+  target_window.loadFile(renderer_page()).catch((error) => {
+    console.error(`could not reload the window: ${error && error.message ? error.message : error}`);
+  });
+  if (looping) return;
+  dialog.showMessageBox(target_window, {
+    type: 'warning',
+    title: 'AgentSense',
+    message: 'The AgentSense window crashed and was reloaded',
+    detail: 'Your terminals kept running. Edits typed in the last moment before the crash may not have been saved.',
+    buttons: ['OK'],
+    noLink: true,
+  }).catch(() => {});
+}
+
 function create_main_window() {
   main_window = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -136,31 +185,96 @@ function create_main_window() {
   register_shortcuts(main_window);
 
   let flush_in_progress = false;
+  let flush_timer = null;
+
+  function stop_flush_wait() {
+    flush_in_progress = false;
+    if (flush_timer) clearTimeout(flush_timer);
+    flush_timer = null;
+  }
+
+  // Nothing more can be saved here, so the user decides. Keep waiting re-arms the question while a flush runs.
+  async function ask_close_anyway(detail) {
+    const target_window = main_window;
+    if (!target_window || target_window.isDestroyed()) return;
+    const { response } = await dialog.showMessageBox(target_window, {
+      type: 'warning',
+      title: 'AgentSense',
+      message: 'AgentSense could not finish saving',
+      detail,
+      buttons: ['Keep waiting', 'Close anyway'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (target_window.isDestroyed()) return;
+    if (response === 1) {
+      stop_flush_wait();
+      target_window.flush_complete = true;
+      target_window.destroy();
+    } else if (flush_in_progress) {
+      arm_flush_timer();
+    }
+  }
+
+  function arm_flush_timer() {
+    flush_timer = setTimeout(() => {
+      flush_timer = null;
+      if (!flush_in_progress) return;
+      ask_close_anyway('The window is not responding. Closing now can lose edits that were not saved yet.').catch(() => {});
+    }, FLUSH_WARN_MS);
+  }
+
   main_window.on('close', (event) => {
     if (main_window.flush_complete) return;
+    // A dead renderer holds nothing to save, and it could never answer the flush below.
+    const contents = main_window.webContents;
+    if (contents.isDestroyed() || contents.isCrashed()) return;
     event.preventDefault();
-    if (flush_in_progress || main_window.webContents.isDestroyed()) return;
+    if (flush_in_progress) return;
     flush_in_progress = true;
-    main_window.webContents.executeJavaScript(
+    arm_flush_timer();
+    contents.executeJavaScript(
       'window.__grid && window.__grid.flush_editors ? window.__grid.flush_editors() : { ok: true }'
     ).then((result) => {
-      flush_in_progress = false;
+      stop_flush_wait();
       if (!main_window || main_window.isDestroyed()) return;
       if (result && result.ok) {
         main_window.flush_complete = true;
         main_window.close();
       }
     }).catch((error) => {
-      flush_in_progress = false;
-      console.error(`could not flush editors before close: ${error && error.message ? error.message : error}`);
+      if (!flush_in_progress) return;
+      stop_flush_wait();
+      const message = error && error.message ? error.message : error;
+      console.error(`could not flush editors before close: ${message}`);
+      ask_close_anyway(`Saving failed: ${message}. Closing now can lose edits that were not saved yet.`).catch(() => {});
+    });
+  });
+
+  main_window.webContents.on('render-process-gone', (_event, details) => {
+    const target_window = main_window;
+    const was_closing = flush_in_progress;
+    stop_flush_wait();
+    if (!target_window || target_window.isDestroyed() || target_window.flush_complete) return;
+    console.error(`renderer gone: ${details.reason} (exit code ${details.exitCode})`);
+    // The user already asked to close and the renderer can no longer answer.
+    if (was_closing) {
+      target_window.flush_complete = true;
+      target_window.destroy();
+      return;
+    }
+    recover_renderer(target_window, details.reason).catch((error) => {
+      console.error(`could not recover the window: ${error && error.message ? error.message : error}`);
     });
   });
 
   main_window.on('closed', () => {
+    stop_flush_wait();
     main_window = null;
   });
 
-  main_window.loadFile(path.join(__dirname, 'src', 'renderer', 'index.html'));
+  main_window.loadFile(renderer_page());
 }
 
 // Single instance: a second launch focuses the existing window instead.
