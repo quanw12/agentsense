@@ -186,6 +186,16 @@
     }
   }
 
+  // The agent kit choice, or null when it cannot be read (the checkbox is then hidden).
+  async function load_agent_kit_flag() {
+    if (!window.hub.agent_kit || typeof window.hub.agent_kit.get !== 'function') return null;
+    try {
+      return (await window.hub.agent_kit.get()) === true;
+    } catch (error) {
+      return null;
+    }
+  }
+
   // True only when the workspace folder is a git repository. Any failure counts as "not a repo" (no checkbox).
   async function load_repo_flag(folder_path) {
     if (!folder_path || !window.hub.git || typeof window.hub.git.is_repo !== 'function') return false;
@@ -215,6 +225,9 @@
       // Git worktree option: the checkbox exists only for a git repo workspace, and is off by default.
       is_repo: false,
       use_worktree: false,
+      // Agent kit choice from the main process. null hides the checkbox (it could not be read).
+      agent_kit_enabled: null,
+      agent_kit_error: '',
       // Model selection per seat (parallel to lineup; MODEL_DEFAULT = agent default) and third-party APIs.
       models: [],
       providers: [],
@@ -328,6 +341,7 @@
         build_api_section(state),
         build_count_section(state),
         build_worktree_section(state),
+        build_agent_kit_section(state),
         build_seat_section(state),
         build_message(state),
       ].filter(Boolean)
@@ -1162,6 +1176,47 @@
     return section;
   }
 
+  // Agent kit option, shown when the lineup has a Claude seat. It is an app-wide choice, on by default.
+  function build_agent_kit_section(state) {
+    if (state.loading || state.agent_kit_enabled === null || !state.lineup.includes('claude')) return null;
+    const section = make_element('section', { class_name: 'launch_section' });
+    section.appendChild(make_element('h3', { class_name: 'launch_section_title', text: 'Agent kit' }));
+    const label = make_element('label', { class_name: 'launch_worktree' });
+    const checkbox = make_element('input', {
+      class_name: 'launch_worktree_check',
+      attrs: { type: 'checkbox', 'data-action': 'toggle_agent_kit', 'data-focus-key': 'agent_kit' },
+      on: {
+        change: (event) => {
+          save_agent_kit(state, event.target.checked === true);
+        },
+      },
+    });
+    checkbox.checked = state.agent_kit_enabled;
+    label.append(checkbox, make_element('span', { text: 'Add lead and worker agents to Claude panes' }));
+    section.appendChild(label);
+    section.appendChild(
+      make_element('p', {
+        class_name: 'launch_worktree_note',
+        text: state.agent_kit_error || 'Type /agentsense:lead in a pane to plan a job and run its tasks in parallel workers. Workers need a git repository with at least one commit. Applies to panes started after this change.',
+      })
+    );
+    return section;
+  }
+
+  async function save_agent_kit(state, enabled) {
+    const previous = state.agent_kit_enabled;
+    state.agent_kit_enabled = enabled;
+    state.agent_kit_error = '';
+    try {
+      state.agent_kit_enabled = (await window.hub.agent_kit.set(enabled)) === true;
+    } catch (error) {
+      if (state.closed) return;
+      state.agent_kit_enabled = previous;
+      state.agent_kit_error = `Could not save this choice: ${error && error.message ? error.message : error}`;
+      render(state);
+    }
+  }
+
   // ---- how many / will launch ----
 
   function build_count_section(state) {
@@ -1301,15 +1356,17 @@
   }
 
   async function start_loading(state) {
-    const [availability_result, presets_result, is_repo] = await Promise.all([
+    const [availability_result, presets_result, is_repo, agent_kit_enabled] = await Promise.all([
       load_availability(),
       load_presets(),
       load_repo_flag(state.workspace.path),
+      load_agent_kit_flag(),
     ]);
     if (state.closed) return;
     state.availability = availability_result.availability;
     state.presets = presets_result.presets;
     state.is_repo = is_repo;
+    state.agent_kit_enabled = agent_kit_enabled;
     state.loading = false;
     state.lineup = [default_agent_id(state)];
     state.models = [MODEL_DEFAULT];

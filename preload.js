@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld('hub', {
     save: (provider) => ipcRenderer.invoke('providers:save', provider),
     remove: (provider_id) => ipcRenderer.invoke('providers:remove', provider_id),
   },
+  agent_kit: {
+    get: () => ipcRenderer.invoke('agent_kit:get'),
+    set: (enabled) => ipcRenderer.invoke('agent_kit:set', enabled),
+  },
   files: {
     pick: (root_path) => ipcRenderer.invoke('files:pick', root_path),
     list: (root_path, rel) => ipcRenderer.invoke('files:list', root_path, rel),

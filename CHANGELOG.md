@@ -14,6 +14,7 @@
 - A saved session that cannot be restored now shows its error and the Restart and Forget buttons instead of the launch page.
 - Clicking a file opens it on a separate Files page, in a preview tab the next click replaces. Editing or double-clicking keeps the tab.
 - Drag a tab or tree row to the edge of an open file to view files side by side, or onto another group to move it there. Groups and tabs survive a restart.
+- Add an agent kit to Claude panes in any folder: `/agentsense:lead` plans a job and runs its tasks in parallel workers, each in its own git worktree. Turn it off on the launch page.
 
 ## 1.0.0
 

@@ -48,11 +48,16 @@ app.whenReady().then(async () => {
   const store = require('../src/main/session_store');
   const saved = store.make_record({agent_id:'claude',workspace_id:'mock',title:'Mock Claude',command:'claude',cwd:fixture,claude_session_id:resumeId,resume_mode:'conversation'});
   store.add_record(store.default_file_path(), saved);
+  // The agent kit is only added next to the per-pane settings file, which needs the hook server.
+  const hook_server = require('../src/main/hook_server').get_hook_server();
+  await hook_server.start();
   const resumed = await pty.create_terminal({agent_id:'claude',command:'claude',cwd:fixture,restore_record_id:saved.record_id});
   await until(() => fs.existsSync(argsFile), 'mock Claude launch');
   const args = JSON.parse(fs.readFileSync(argsFile, 'utf8'));
   check('restart uses the saved Claude conversation ID in the real launch command', args.includes('--resume') && args.includes(resumeId));
+  check('a claude pane receives the agent kit folder intact', args[args.indexOf('--plugin-dir') + 1] === require('../src/main/agent_kit').KIT_DIR);
   await pty.close_terminal(resumed.terminal_id);
+  hook_server.stop();
   const childScript = path.join(fixture, 'child.js');
   const pidFile = path.join(fixture, 'child-pid.json');
   fs.writeFileSync(childScript, `require('fs').writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify({pid:process.pid,parent:process.ppid})); setInterval(()=>{},1000);`);
