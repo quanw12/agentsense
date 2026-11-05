@@ -14,6 +14,7 @@
 - A saved session that cannot be restored now shows its error and the Restart and Forget buttons instead of the launch page.
 - Clicking a file opens it on a separate Files page, in a preview tab the next click replaces. Editing or double-clicking keeps the tab.
 - Drag a tab or tree row to the edge of an open file to view files side by side, or onto another group to move it there. Groups and tabs survive a restart.
+- The Mobile access panel no longer offers a QR code or links a phone cannot use. While "Reachable from other devices" is off it tells you to turn it on; when on, the QR code prefers Wi-Fi or wired addresses over virtual adapters, and every address stays listed.
 
 ## 1.0.0
 

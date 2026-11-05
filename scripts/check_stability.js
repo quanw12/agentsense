@@ -9,6 +9,7 @@ const files = require('../src/main/ipc_files');
 const { resolve_inside } = require('../src/main/path_guard');
 const { create_limiter } = require('../src/main/rate_limit');
 const { CAPABILITIES, model_env, assert_provider_compatible } = require('../src/main/cli_capabilities');
+const { pairing_targets } = require('../src/main/mobile_pairing');
 const catalog = require('../src/renderer/agents');
 
 let failed = 0;
@@ -189,6 +190,31 @@ providers.set_file_for_tests(null);
   let blocked = false;
   try { assert_provider_compatible('terminal', 'openai'); } catch (error) { blocked = true; }
   check('terminal rejects a provider', blocked);
+
+  // The adapters are in the order a real PC reported them: a disconnected Tailscale first, Wi-Fi second.
+  const adapters = [
+    { name: 'Tailscale', address: '169.254.83.107' },
+    { name: 'vEthernet (WSL (Hyper-V firewall))', address: '172.19.176.1' },
+    { name: 'Wi-Fi', address: '192.168.1.79' },
+    { name: 'VMware Network Adapter VMnet8', address: '192.168.40.1' },
+  ];
+  const pairing_conn = { port: 4321, token: 'f'.repeat(32) };
+  const pair_off = pairing_targets({ ...pairing_conn, bind_all: false }, adapters);
+  check('pairing off: no links and no QR', pair_off.urls.length === 0 && pair_off.qr_url === null);
+  const pair_stopped = pairing_targets(null, adapters);
+  check('pairing stopped: no links and no QR', pair_stopped.urls.length === 0 && pair_stopped.qr_url === null);
+  const pair_on = pairing_targets({ ...pairing_conn, bind_all: true }, adapters);
+  check('pairing on: QR skips dead and virtual adapters for Wi-Fi', pair_on.qr_label === 'Wi-Fi' && pair_on.qr_url === `http://192.168.1.79:4321/m/${pairing_conn.token}/`);
+  check('pairing on: every address is still listed', pair_on.urls.length === adapters.length && adapters.every((entry) => pair_on.urls.some((item) => item.url.includes(`//${entry.address}:`))));
+  check('pairing on: only the QR address is marked', pair_on.urls.filter((item) => item.in_qr).map((item) => item.url).join() === pair_on.qr_url);
+  const qr_label_for = (list) => pairing_targets({ ...pairing_conn, bind_all: true }, list).qr_label;
+  check('pairing: wired beats a virtual adapter', qr_label_for([{ name: 'vEthernet (Default Switch)', address: '192.168.5.1' }, { name: 'Ethernet', address: '10.0.0.8' }]) === 'Ethernet');
+  check('pairing: a connected Tailscale beats WSL', qr_label_for([{ name: 'vEthernet (WSL)', address: '172.19.0.1' }, { name: 'Tailscale', address: '100.101.1.2' }]) === 'Tailscale');
+  check('pairing: Wi-Fi beats a connected Tailscale', qr_label_for([{ name: 'Tailscale', address: '100.101.1.2' }, { name: 'Wi-Fi', address: '192.168.1.2' }]) === 'Wi-Fi');
+  check('pairing: a bridged Hyper-V switch can hold the LAN address', qr_label_for([{ name: 'vEthernet (WSL)', address: '172.19.0.1' }, { name: 'vEthernet (External)', address: '192.168.1.9' }]) === 'vEthernet (External)');
+  check('pairing: a localized adapter name still ranks by its address', qr_label_for([{ name: 'vEthernet (WSL)', address: '172.19.0.1' }, { name: 'Verbindung 2', address: '192.168.1.3' }]) === 'Verbindung 2');
+  const pair_dead = pairing_targets({ ...pairing_conn, bind_all: true }, [adapters[0], adapters[1]]);
+  check('pairing: no QR when nothing looks reachable, links stay', pair_dead.qr_url === null && pair_dead.urls.length === 2);
 
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nStability checks passed');
   process.exit(failed ? 1 : 0);

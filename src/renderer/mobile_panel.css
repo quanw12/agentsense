@@ -138,6 +138,25 @@
   color: var(--text);
 }
 
+.mobile_callout {
+  padding: 10px 12px;
+  border: 1px solid var(--accent_line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.mobile_callout_title {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.mobile_callout_text {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .mobile_pair {
   display: flex;
   align-items: center;

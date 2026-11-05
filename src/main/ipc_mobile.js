@@ -9,11 +9,12 @@ const qrcode = require('qrcode');
 const mobile_settings = require('./mobile_settings');
 const { get_mobile_server } = require('./mobile_server');
 const { broadcast } = require('./ipc_terminals');
+const { pairing_targets, pairing_url } = require('./mobile_pairing');
 
 let saver_id = null;
 
-// IPv4 addresses a phone could reach: the LAN adapters and virtual ones like Tailscale (100.x).
-// Loopback is skipped; the panel shows the loopback URL itself when nothing else is available.
+// Every non-loopback IPv4 address: the LAN adapters and virtual ones like Tailscale (100.x).
+// mobile_pairing.js ranks them, because a virtual adapter may come first and be useless to a phone.
 function lan_addresses() {
   const result = [];
   const interfaces = os.networkInterfaces();
@@ -27,24 +28,18 @@ function lan_addresses() {
   return result;
 }
 
-function pairing_url(connection, address) {
-  return `http://${address}:${connection.port}/m/${connection.token}/`;
-}
-
 async function build_state() {
   const file_path = mobile_settings.default_file_path();
   const settings = mobile_settings.read_settings(file_path);
   const server = get_mobile_server();
   const connection = server.get_connection();
-  const urls = connection
-    ? lan_addresses().map((entry) => ({ label: entry.name, url: pairing_url(connection, entry.address) }))
-    : [];
-  // The panel pairs by QR; with no LAN address (offline machine) the loopback URL still works for tests.
-  const primary = urls.length > 0 ? urls[0].url : connection ? pairing_url(connection, '127.0.0.1') : null;
+  // Follows the live socket, not the settings file: what the phone can reach is what is really listening.
+  const { urls, qr_url, qr_label } = pairing_targets(connection, lan_addresses());
+  const reachable = connection ? connection.bind_all : settings.bind_all;
   let qr_svg = null;
-  if (primary) {
+  if (qr_url) {
     try {
-      qr_svg = await qrcode.toString(primary, { type: 'svg', margin: 1, errorCorrectionLevel: 'L' });
+      qr_svg = await qrcode.toString(qr_url, { type: 'svg', margin: 1, errorCorrectionLevel: 'L' });
     } catch (error) {
       qr_svg = null;
     }
@@ -58,11 +53,12 @@ async function build_state() {
     token: settings.token,
     urls,
     loopback_url: connection ? pairing_url(connection, '127.0.0.1') : null,
-    scope: settings.bind_all ? 'lan' : 'loopback',
-    scope_note: settings.bind_all
+    scope: reachable ? 'lan' : 'loopback',
+    scope_note: reachable
       ? 'Listening on this LAN or VPN. This is not a public internet service and the link is not HTTPS.'
-      : 'Listening on this computer only (loopback). Other devices cannot connect until LAN access is turned on.',
+      : 'Listening on this computer only (loopback).',
     qr_svg,
+    qr_label,
     clients: server.client_count(),
   };
 }
