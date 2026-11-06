@@ -5,7 +5,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { app } = require('electron');
+const crypto = require('crypto');
+const { app, BrowserWindow } = require('electron');
 const child_process = require('child_process');
 const { WebSocket } = require('ws');
 
@@ -68,6 +69,99 @@ function connect_ws(port, token) {
     ws.on('open', () => resolve({ ws, messages }));
     ws.on('error', reject);
   });
+}
+
+async function can_fetch(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    return res.status === 200;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Renders the real panel from a state object in a hidden window, and reports what the user would see.
+async function render_panel(window, snapshot) {
+  await window.loadURL('about:blank');
+  await window.webContents.executeJavaScript(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'mobile_panel.js'), 'utf8'));
+  return window.webContents.executeJavaScript(`(async () => {
+    window.hub = { mobile: { get_state: async () => (${JSON.stringify(snapshot)}) } };
+    const panel = window.init_mobile_panel({});
+    panel.open();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const root = document.getElementById('mobile_panel_overlay');
+    const seen = {
+      qr: Boolean(root.querySelector('.mobile_qr svg')),
+      links: Array.from(root.querySelectorAll('.mobile_url_value')).map((item) => item.textContent),
+      callout: root.querySelector('.mobile_callout') ? root.querySelector('.mobile_callout').textContent : '',
+      switch_on: root.querySelector('#mobile_bind_all').checked,
+      text: root.textContent,
+    };
+    panel.close();
+    return seen;
+  })()`);
+}
+
+// The pairing flow with both listeners, through the real build_state and the real panel. The "on" stage
+// really listens on every interface for a moment, with a random token and nothing else behind it.
+async function check_pairing_states() {
+  await app.whenReady();
+  app.on('window-all-closed', () => {}); // Closing the hidden window must not quit the smoke test.
+  const mobile_settings = require('../src/main/mobile_settings');
+  const { build_state, lan_addresses } = require('../src/main/ipc_mobile');
+  const { get_mobile_server } = require('../src/main/mobile_server');
+  const qrcode = require('qrcode');
+  const settings_file = mobile_settings.default_file_path();
+  const token = crypto.randomBytes(16).toString('hex');
+  const live = get_mobile_server();
+  const window = new BrowserWindow({ show: false });
+
+  // ---- "Reachable from other devices" off: the default ----
+  mobile_settings.write_settings(settings_file, { enabled: true, token, port: 0 });
+  check('pairing off: reachable switch is off by default', mobile_settings.read_settings(settings_file).bind_all === false);
+  const off_conn = await live.start({ port: 0, bind_all: false, token });
+  const off = await build_state();
+  check('pairing off: state has no QR and no links', off.qr_svg === null && off.urls.length === 0 && off.scope === 'loopback');
+  for (const entry of lan_addresses()) {
+    check(`pairing off: the server really is out of reach on ${entry.name}`, !(await can_fetch(`http://${entry.address}:${off_conn.port}/m/${token}/`)));
+  }
+  check('pairing off: this computer can still reach it', await can_fetch(off.loopback_url));
+  const off_seen = await render_panel(window, off);
+  check('pairing off: panel shows no QR or link', !off_seen.qr && off_seen.links.length === 0);
+  check('pairing off: panel says to turn the switch on', off_seen.callout.includes('Turn on “Reachable from other devices”') && !off_seen.switch_on);
+  await live.stop();
+
+  // ---- "Reachable from other devices" on ----
+  mobile_settings.write_settings(settings_file, { enabled: true, bind_all: true, token, port: 0 });
+  await live.start({ port: 0, bind_all: true, token });
+  const on = await build_state();
+  check('pairing on: every address is listed', on.urls.length === lan_addresses().length && on.scope === 'lan');
+  const in_qr = on.urls.filter((entry) => entry.in_qr);
+  const on_seen = await render_panel(window, on);
+  check('pairing on: panel lists every address and has no callout', on_seen.links.length === on.urls.length && on_seen.callout === '' && on_seen.switch_on);
+  if (in_qr.length === 1) {
+    console.log(`     QR adapter here: ${in_qr[0].label}`);
+    const expected_svg = await qrcode.toString(in_qr[0].url, { type: 'svg', margin: 1, errorCorrectionLevel: 'L' });
+    check('pairing on: the QR encodes the top-ranked link', on.qr_svg === expected_svg && on.urls[0] === in_qr[0]);
+    check('pairing on: the QR link really answers', await can_fetch(in_qr[0].url));
+    check('pairing on: panel shows the QR and names its adapter', on_seen.qr && on_seen.text.includes(`The QR code uses ${on.qr_label}.`));
+  } else {
+    // A machine with no usable network, so the panel has to say so instead of showing a dead QR.
+    console.log('     no usable network address on this machine');
+    check('pairing on: no QR without a usable address', on.qr_svg === null && !on_seen.qr);
+  }
+  await live.stop();
+
+  // ---- on, but only adapters a phone cannot use ----
+  const dead_seen = await render_panel(window, {
+    ...on,
+    qr_svg: null,
+    qr_label: null,
+    urls: [{ label: 'Tailscale', url: 'http://169.254.0.1:1/m/x/', in_qr: false }],
+  });
+  check('pairing on: dead adapters get no QR but stay listed with a warning', !dead_seen.qr && dead_seen.links.length === 1 && dead_seen.text.includes('None of these addresses'));
+
+  window.destroy();
 }
 
 async function main() {
@@ -209,6 +303,8 @@ async function main() {
   const locked = await fetch(`http://127.0.0.1:${guard_conn.port}/m/${TOKEN}/`);
   check('lockout: correct token is locked out after 3 wrong ones', locked.status === 404);
   await guard.stop();
+
+  await check_pairing_states();
 
   await pty_manager.kill_all();
   await Promise.all(conpty_helpers);

@@ -153,7 +153,7 @@ npm run start
 | --- | --- |
 | `npm run start` | Run the app in development |
 | `npm run smoke:workbench` | Real Electron/terminal checks for pages, explorer, drops and worktrees |
-| `npm run smoke:mobile` | End-to-end check of the mobile server (auth, attach, input, create, kill) |
+| `npm run smoke:mobile` | End-to-end check of the mobile server (auth, attach, input, create, kill) and the pairing panel. Briefly listens on all interfaces, so Windows Firewall may ask once |
 | `npm run screenshots` | Recapture the README screenshots from a throwaway profile |
 | `npm run icons` | Repack `build/icon.png` + `build/icon.ico` from `assets/icon.png` |
 | `npm run dist` | Build `dist/win-unpacked` with electron-builder |
@@ -170,23 +170,31 @@ AgentSense can serve a touch-friendly web UI from the desktop, so your phone bec
 remote control for the sessions running on your PC.
 
 1. Click the **phone icon** in the sidebar header and turn on **Enable mobile access**.
-2. Scan the QR code with your phone (or copy one of the links). The link contains a random
+2. Turn on **Reachable from other devices**. It is off by default, and while it is off the
+   server listens on this PC only, so the panel shows no QR code or links.
+3. Scan the QR code with your phone (or copy one of the links). The link contains a random
    pairing token, stored in `%APPDATA%\AgentSense\mobile.json`.
-3. Tap a session to get a full-screen terminal with a quick-keys bar
+4. Tap a session to get a full-screen terminal with a quick-keys bar
    (Esc / Tab / arrows / `^C` / `^D` / Enter). Toggle **Line** to send a whole line per
    Enter, the most reliable way to type (and paste) on a phone keyboard. **+ New** starts an
    agent in any workspace; panes created on the phone appear on the desktop right away, and
    the other way round.
-4. While mobile access is on, enable **Keep the PC awake** so sessions survive idle.
+5. While mobile access is on, enable **Keep the PC awake** so sessions survive idle.
 
 **Where the phone can reach the PC**
 
-- **Same Wi-Fi / LAN**: works out of the box ("Reachable from other devices" on). The first
-  start may ask to allow AgentSense through Windows Firewall; allow it on private networks.
+- **Same Wi-Fi / LAN**: works once "Reachable from other devices" is on. Windows may then ask
+  to allow AgentSense through the firewall; allow it on private networks.
 - **Away from home**: install [Tailscale](https://tailscale.com) (free) on **this PC and your
   phone**, join the same tailnet, and keep "Reachable from other devices" on. The phone
   reaches the PC by its Tailscale address (`100.x.x.x`, listed in the panel) over an
   encrypted WireGuard tunnel.
+
+The panel lists every address of this PC. The QR code uses the one a phone is most likely to
+reach, guessed from the adapter name and address: Wi-Fi, then wired, then other private
+networks, then Tailscale or another VPN. Adapters for WSL, Hyper-V, VMware and similar come
+last and are never put in the QR code. If the QR code does not connect, for example when you
+are away from home on Tailscale, open the link for the right adapter instead.
 
 > [!WARNING]
 > **Do not port-forward this page to the internet.** It is plain HTTP and is meant for

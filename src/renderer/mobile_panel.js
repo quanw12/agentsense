@@ -105,7 +105,8 @@
     function build_url_row(entry) {
       const row = create_element('div', 'mobile_url_row');
       const text = create_element('div', 'mobile_url_text');
-      text.append(create_element('span', 'mobile_url_label', entry.label || 'Network'));
+      const label = entry.label || 'Network';
+      text.append(create_element('span', 'mobile_url_label', entry.in_qr ? `${label} · in the QR code` : label));
       const code = create_element('code', 'mobile_url_value', entry.url);
       code.title = entry.url;
       text.append(code);
@@ -115,6 +116,58 @@
       copy.addEventListener('click', () => copy_url(entry.url));
       row.append(text, copy);
       return row;
+    }
+
+    // Shown instead of the QR and links while the server only listens on this PC: a phone could not use them.
+    function build_loopback_callout() {
+      const callout = create_element('div', 'mobile_callout');
+      callout.setAttribute('role', 'status');
+      callout.append(
+        create_element('p', 'mobile_callout_title', 'Your phone cannot connect yet'),
+        create_element(
+          'p',
+          'mobile_callout_text',
+          'Mobile access is listening on this computer only. Turn on “Reachable from other devices” below to get a QR code and links for your phone.'
+        )
+      );
+      return callout;
+    }
+
+    function build_pairing(body, snapshot) {
+      const urls = Array.isArray(snapshot.urls) ? snapshot.urls : [];
+      if (snapshot.qr_svg) {
+        const pair = create_element('div', 'mobile_pair');
+        const qr = create_element('div', 'mobile_qr');
+        qr.innerHTML = snapshot.qr_svg; // trusted: generated locally by the qrcode package
+        pair.append(qr);
+        const hint = create_element('div', 'mobile_pair_hint');
+        const fallback = urls.length > 1 ? ' If it does not connect, open another link below.' : '';
+        hint.append(
+          create_element(
+            'p',
+            'mobile_pair_text',
+            `Scan with your phone on the same network. The QR code uses ${snapshot.qr_label || 'the first link'}.${fallback} The links contain the pairing token.`
+          )
+        );
+        pair.append(hint);
+        body.append(pair);
+      } else if (urls.length > 0) {
+        body.append(
+          create_element(
+            'p',
+            'mobile_note',
+            'None of these addresses looks reachable from a phone, so there is no QR code. Connect this PC to Wi-Fi or Tailscale, or try a link below.'
+          )
+        );
+      } else {
+        body.append(create_element('p', 'mobile_note', 'No network address found yet — connect to Wi-Fi or Tailscale.'));
+      }
+
+      if (urls.length > 0) {
+        const list = create_element('div', 'mobile_urls');
+        for (const entry of urls) list.append(build_url_row(entry));
+        body.append(list);
+      }
     }
 
     function build_body(snapshot) {
@@ -152,25 +205,9 @@
         return body;
       }
 
-      if (snapshot.running && snapshot.qr_svg) {
-        const pair = create_element('div', 'mobile_pair');
-        const qr = create_element('div', 'mobile_qr');
-        qr.innerHTML = snapshot.qr_svg; // trusted: generated locally by the qrcode package
-        pair.append(qr);
-        const hint = create_element('div', 'mobile_pair_hint');
-        hint.append(
-          create_element('p', 'mobile_pair_text', 'Scan with your phone, or open a link below. The link contains the pairing token.')
-        );
-        pair.append(hint);
-        body.append(pair);
-      }
-
-      if (snapshot.running && Array.isArray(snapshot.urls) && snapshot.urls.length > 0) {
-        const list = create_element('div', 'mobile_urls');
-        for (const entry of snapshot.urls) list.append(build_url_row(entry));
-        body.append(list);
-      } else if (snapshot.running) {
-        body.append(create_element('p', 'mobile_note', 'No network address found yet — connect to Wi-Fi or Tailscale and reopen this panel.'));
+      if (snapshot.running) {
+        if (snapshot.scope === 'loopback') body.append(build_loopback_callout());
+        else build_pairing(body, snapshot);
       }
 
       const toggles = create_element('div', 'mobile_toggles');
@@ -206,7 +243,7 @@
           'mobile_note',
           (snapshot.scope_note || 'Mobile access stays on this LAN or a VPN. It is not a public internet service.') +
             ' First start may ask to allow AgentSense through Windows Firewall — allow it on private networks. ' +
-            'Away from home, install Tailscale on this PC and your phone and keep this switch on; ' +
+            'Away from home, install Tailscale on this PC and your phone and keep “Reachable from other devices” on; ' +
             'do not port-forward this page to the internet.'
         )
       );
