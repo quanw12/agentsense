@@ -68,6 +68,62 @@
   min-height: 0;
 }
 
+.telegram_section {
+  border-top: 1px solid var(--border);
+}
+
+.telegram_title {
+  margin: 0;
+  color: var(--text);
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.telegram_steps {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.telegram_token_row {
+  display: flex;
+  gap: 8px;
+}
+
+.telegram_token_input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border_strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.telegram_token_input:focus-visible {
+  outline: 1px solid var(--accent_line);
+}
+
+.telegram_paired_row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.telegram_error {
+  margin: 0;
+  color: var(--text);
+  padding: 8px 10px;
+  border: 1px solid var(--accent_line);
+  border-radius: 6px;
+  background: var(--panel);
+  line-height: 1.5;
+}
+
 .mobile_body {
   max-width: 560px;
   padding: 16px;

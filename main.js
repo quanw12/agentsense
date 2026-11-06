@@ -32,6 +32,7 @@ const { register_file_ipc } = require('./src/main/ipc_files');
 const { register_mobile_ipc } = require('./src/main/ipc_mobile');
 const { get_hook_server } = require('./src/main/hook_server');
 const { get_mobile_server } = require('./src/main/mobile_server');
+const { register_telegram_ipc, stop_telegram_bot } = require('./src/main/ipc_telegram');
 
 const WINDOW_WIDTH = 1400;
 const WINDOW_HEIGHT = 900;
@@ -309,6 +310,8 @@ if (!got_lock) {
     register_file_ipc();
     // Starts the mobile access server itself when it was left enabled (mobile.json).
     register_mobile_ipc();
+    // Starts the Telegram bot when it was left on (telegram.json).
+    register_telegram_ipc();
     // Claude Code hooks post to this server. Without it the app still works; claude panes just get no status.
     try {
       await get_hook_server().start();
@@ -329,7 +332,7 @@ if (!got_lock) {
     if (quit_state === 'draining') return;
     quit_state = 'draining';
     const terminals_done = pty_manager.shutdown();
-    Promise.all([terminals_done, get_mobile_server().stop(), get_hook_server().stop()]).catch((error) => {
+    Promise.all([terminals_done, stop_telegram_bot(), get_mobile_server().stop(), get_hook_server().stop()]).catch((error) => {
       console.error(`terminal shutdown failed: ${error && error.message ? error.message : error}`);
     }).finally(() => {
       quit_state = 'done';
