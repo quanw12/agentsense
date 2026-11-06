@@ -118,8 +118,12 @@ A local, token-protected hook server turns Claude Code events into pane status
 
 ## Download
 
+**[Download AgentSense v1.0.0-beta.2](https://github.com/quanw12/agentsense/releases/tag/v1.0.0-beta.2)** for
+Windows x64: get `AgentSense-v1.0.0-beta.2-windows-x64.zip` from the release's Assets, then follow
+[Install](#install). `SHA256SUMS.txt` on the same page has the checksums.
+
 > [!NOTE]
-> The first public release is being prepared. Until then,
+> This is a preview release and the app is not code-signed. You can also
 > [build from source](#build-from-source) in a few commands.
 
 ## Install
