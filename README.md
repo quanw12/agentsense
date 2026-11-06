@@ -78,7 +78,8 @@ the prompt, without pressing Enter.
 
 ### 📱 Mobile access
 Pair your phone with a QR code and drive the same sessions from its browser: watch, type,
-start a new agent, close a session. Works over LAN or Tailscale.
+start a new agent, close a session. Works over LAN or Tailscale. Or use a
+[Telegram bot](#telegram-bot) from any network, with notifications when an agent needs you.
 
 </td>
 </tr>
@@ -154,6 +155,8 @@ npm run start
 | `npm run start` | Run the app in development |
 | `npm run smoke:workbench` | Real Electron/terminal checks for pages, explorer, drops and worktrees |
 | `npm run smoke:mobile` | End-to-end check of the mobile server (auth, attach, input, create, kill) and the pairing panel. Briefly listens on all interfaces, so Windows Firewall may ask once |
+| `npm run check:telegram` | Telegram bot checks against a fake Bot API (pairing, who it obeys, input, files) |
+| `npm run smoke:telegram` | Telegram bot end to end with a real pane; only the Telegram server is faked |
 | `npm run screenshots` | Recapture the README screenshots from a throwaway profile |
 | `npm run icons` | Repack `build/icon.png` + `build/icon.ico` from `assets/icon.png` |
 | `npm run dist` | Build `dist/win-unpacked` with electron-builder |
@@ -205,6 +208,46 @@ in constant time; three wrong tokens lock new connections out for 30 seconds. **
 pairing token** invalidates the old QR and link. The phone can only pick workspaces and
 agents you already configured on the desktop; it never sends filesystem paths. Desktop and
 phone can drive the same pane at once (last writer wins).
+
+## Telegram bot
+
+Drive your panes from a Telegram chat, on any network the phone has. The bot only makes
+outgoing connections, so there is no port to open and no VPN to install. The PC still has to
+stay on, online and running AgentSense, because that is where the agents run.
+
+1. In Telegram, open **@BotFather**, send `/newbot` and copy the token.
+2. In AgentSense, click the **phone icon**, paste the token under **Telegram bot** and save.
+3. Click **Get pairing code** and send the `/pair CODE` it shows to your bot.
+
+| In the chat | What happens |
+| ----------- | ------------ |
+| Any message | Goes to the current pane. Reply to a screen message to send to that pane instead. |
+| `/compact` and other unknown commands | Go to the pane, so an agent's own commands still work |
+| `/send /help` | Sends text as is, for names the bot also uses |
+| `/panes`, `/screen` | Pick a pane, see its screen. The screen keeps updating while the agent works. |
+| `/new`, `/close` | Start an agent in a saved workspace, close a pane (after a confirm button) |
+| `/diff` | `git status` and the diff against `HEAD` |
+| `/ls [folder]`, `/cat <file>` | Browse the workspace. Long output arrives as a file. |
+
+Screen messages have buttons for Enter, Esc, Ctrl+C, arrows and 1/2/3, which is enough to answer
+most agent prompts. Claude Code panes also notify you when they finish or need you; other agents
+have no hooks, so they only report when they exit.
+
+> [!WARNING]
+> Whoever is paired can run anything on this PC through your agents. Telegram bot chats are
+> **not end-to-end encrypted**: screens, diffs and files you open pass through Telegram's
+> servers. Do not use this for code or secrets that must stay private.
+
+**Security:** the bot obeys one Telegram user, set by a one-time code that expires in 10 minutes
+and is burned after 5 wrong tries. Everyone else, and every group, gets silence. Messages sent
+while the app was off are dropped and late deliveries are refused, so a queued prompt cannot fire
+hours later. Forwarded messages are not sent to agents. `/cat` stays inside the workspace and
+refuses common credentials files (`.env`, keys, `.git/`), but that list cannot be complete, and
+agent output and diffs are not filtered. The token is encrypted with Windows DPAPI in
+`%APPDATA%\AgentSense\telegram.json` and is never shown again.
+
+The screen is the pane's current size, so a wide pane wraps on a phone. For close work, use
+[Mobile access](#mobile-access) over Tailscale, which has a full terminal and stays encrypted end to end.
 
 ## Keyboard shortcuts
 

@@ -106,4 +106,14 @@ contextBridge.exposeInMainWorld('hub', {
     set_keep_awake: (keep_awake) => ipcRenderer.invoke('mobile:set_keep_awake', keep_awake),
     rotate_token: () => ipcRenderer.invoke('mobile:rotate_token'),
   },
+  telegram: {
+    get_state: () => ipcRenderer.invoke('telegram:get_state'),
+    set_token: (token) => ipcRenderer.invoke('telegram:set_token', token),
+    clear_token: () => ipcRenderer.invoke('telegram:clear_token'),
+    set_enabled: (enabled) => ipcRenderer.invoke('telegram:set_enabled', enabled),
+    new_pair_code: () => ipcRenderer.invoke('telegram:new_pair_code'),
+    unpair: () => ipcRenderer.invoke('telegram:unpair'),
+    set_notify: (notify) => ipcRenderer.invoke('telegram:set_notify', notify),
+    set_keep_awake: (keep_awake) => ipcRenderer.invoke('telegram:set_keep_awake', keep_awake),
+  },
 });

@@ -26,6 +26,7 @@ const pty_manager = require('./pty_manager');
 const { get_hook_server } = require('./hook_server');
 const { check_commands } = require('./command_check');
 const { create_limiter } = require('./rate_limit');
+const { create_agent_pane } = require('./pane_launch');
 
 const TOKEN_HEX_LENGTH = 32;
 const STATIC_PATTERN = new RegExp(`^\\/m\\/([0-9a-f]{${TOKEN_HEX_LENGTH}})(\\/.*)?$`);
@@ -34,7 +35,6 @@ const AGENT_SVG_PATTERN = /^\/assets\/agents\/([A-Za-z0-9_-]+\.svg)$/;
 const MAX_WS_MESSAGE_BYTES = 64 * 1024;
 const MAX_INPUT_LENGTH = 8192;
 const MAX_ATTACHED = 8; // per client; the mobile UI uses one at a time
-const MAX_TITLE_LENGTH = 60;
 const FAIL_LIMIT = 3;
 const FAIL_LOCKOUT_MS = 30 * 1000;
 const DEFAULT_COLS = 80;
@@ -68,16 +68,6 @@ function send_plain(response, status, text) {
     'Referrer-Policy': 'no-referrer',
   });
   response.end(text);
-}
-
-// The pane's name, agent id and agent label travel in the title field (same format as the renderer:
-// name|agent_id|agent_label), so identity survives a re-attach on either side.
-function clean_part(value) {
-  return String(value === undefined || value === null ? '' : value).replace(/\|/g, '/').trim();
-}
-
-function encode_title(name, agent_id, agent_label) {
-  return [clean_part(name), clean_part(agent_id), clean_part(agent_label)].join('|');
 }
 
 function clamp_size(value, fallback) {
@@ -439,50 +429,18 @@ class MobileServer extends EventEmitter {
   // The phone picks only a workspace id and an agent id; the folder and the command line come from
   // state.json and the catalog. A missing agent is reported instead of spawning a shell error.
   async handle_create(ws, msg) {
-    const workspace_id = typeof msg.workspace_id === 'string' ? msg.workspace_id : '';
-    const agent_id = typeof msg.agent_id === 'string' ? msg.agent_id.trim().toLowerCase() : '';
-    let workspace = null;
+    let info = null;
     try {
-      workspace = this.list_workspaces().find((item) => item && item.id === workspace_id) || null;
+      info = await create_agent_pane(
+        { list_workspaces: this.list_workspaces, catalog: this.catalog, check_commands, pty: pty_manager },
+        { workspace_id: msg.workspace_id, agent_id: msg.agent_id, title: msg.title }
+      );
     } catch (error) {
-      return this.send_to(ws, { type: 'error', message: 'could not read the workspace list' });
+      return this.send_to(ws, { type: 'error', message: error.message });
     }
-    if (!workspace) return this.send_to(ws, { type: 'error', message: 'unknown workspace' });
-    const agent = this.catalog.find((item) => item && item.id === agent_id) || null;
-    if (!agent || typeof agent.command !== 'string' || agent.command.trim() === '') {
-      return this.send_to(ws, { type: 'error', message: 'unknown agent' });
-    }
-    const available = await check_commands([agent.command]).catch(() => ({}));
-    if (!available[agent.command]) {
-      return this.send_to(ws, { type: 'error', message: `${agent.label} is not installed on the desktop` });
-    }
-    const command =
-      typeof agent.launch_command === 'string' && agent.launch_command.trim() !== '' ? agent.launch_command : agent.command;
-    const name = typeof msg.title === 'string' && msg.title.trim() !== '' ? msg.title.trim().slice(0, MAX_TITLE_LENGTH) : agent.label;
-
-    try {
-      const created = await pty_manager.create_terminal({
-        workspace_id,
-        agent_id: agent.id,
-        cwd: workspace.path,
-        command,
-        title: encode_title(name, agent.id, agent.label),
-        cols: DEFAULT_COLS,
-        rows: DEFAULT_ROWS,
-      });
-      const info = this.find_terminal(created.terminal_id);
-      if (!info) {
-        return this.send_to(ws, { type: 'error', message: 'terminal disappeared right after start' });
-      }
-      // The phone replays the buffer on attach; the desktop broadcast carries it so its pane can too.
-      this.broadcast_all({ type: 'created', terminal: without_buffer(info) });
-      this.emit('terminal_created', info);
-    } catch (error) {
-      return this.send_to(ws, {
-        type: 'error',
-        message: `could not start ${agent.label}: ${error && error.message ? error.message : error}`,
-      });
-    }
+    // The phone replays the buffer on attach; the desktop broadcast carries it so its pane can too.
+    this.broadcast_all({ type: 'created', terminal: without_buffer(info) });
+    this.emit('terminal_created', info);
     return undefined;
   }
 

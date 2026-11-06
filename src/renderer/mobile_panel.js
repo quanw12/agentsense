@@ -46,6 +46,11 @@
       busy: false,
     };
 
+    // Lives in its own module; a missing one only hides the section.
+    const telegram = typeof window.init_telegram_section === 'function'
+      ? window.init_telegram_section({ request_render: () => render() })
+      : null;
+
     async function call_hub(action) {
       if (state.busy) return;
       state.busy = true;
@@ -67,6 +72,7 @@
         console.error('mobile state failed:', error);
         return;
       }
+      if (telegram) await telegram.refresh();
       render();
     }
 
@@ -285,6 +291,7 @@
 
       const body_wrap = create_element('div', 'mobile_body_wrap');
       body_wrap.append(build_body(snapshot));
+      if (telegram) body_wrap.append(telegram.build());
 
       root.replaceChildren(header, body_wrap);
 

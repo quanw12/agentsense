@@ -39,6 +39,7 @@ Scope names follow the folder: `panes`, `sidebar`, `launch`, `worktrees`,
 npm install
 npm run start     # app opens, terminal panes spawn
 npm run check
+npm run check:telegram  # Telegram bot against a fake Bot API
 npm run check:pty  # final output, concurrent exit/close, resume and shutdown admission
 npm run check:stability  # repeated native smoke processes; checks real exit codes
 npm run build:app  # rebuild and verify the installer payload
