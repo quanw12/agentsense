@@ -52,6 +52,18 @@ async function run(window) {
   await until(() => js('Boolean(document.querySelector(".launch_agent_button[data-agent-id=terminal]:not(:disabled)"))'), 'agent catalog');
   check('14 built-in CLI entries include Gemini, Copilot, Pi and Hermes', await js(
     `['gemini','copilot','pi','hermes'].every(id => window.AGENT_CATALOG.some(a => a.id === id && a.install_command)) && AGENT_CATALOG.length === 14`));
+  check('the agent kit choice is on by default and can be saved', await js(
+    `const first = await window.hub.agent_kit.get();
+    await window.hub.agent_kit.set(false);
+    const off = await window.hub.agent_kit.get();
+    await window.hub.agent_kit.set(true);
+    return first === true && off === false && (await window.hub.agent_kit.get()) === true;`));
+  // The checkbox belongs to a Claude seat, which needs the claude CLI on this machine.
+  if (await js('Boolean(document.querySelector(".launch_agent_button[data-agent-id=claude]:not(:disabled)"))')) {
+    await js(`document.querySelector('.launch_agent_button[data-agent-id=claude]').click();`);
+    await until(() => js('Boolean(document.querySelector("[data-action=toggle_agent_kit]"))'), 'agent kit checkbox');
+    check('a Claude seat shows the agent kit checkbox, checked', await js('document.querySelector("[data-action=toggle_agent_kit]").checked'));
+  }
   await js(`document.querySelector('.launch_agent_button[data-agent-id=terminal]').click();
     document.querySelector('[data-count="2"]').click();
     document.querySelector('[data-action="launch"]').click();`);

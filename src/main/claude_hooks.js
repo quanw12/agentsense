@@ -37,8 +37,9 @@ function build_hook_command(connection, terminal_id, event_name) {
   return `curl.exe -s -m 3 -X POST -H "Content-Type: application/json" --data-binary @- "${url}"; exit 0`;
 }
 
-// The settings object written to the hooks file.
-function build_hooks_settings(connection, terminal_id) {
+// The settings object written to the hooks file. With options.agent_kit, worker worktrees branch from the pane's
+// current HEAD: the Claude Code default is the remote's default branch, which would hide the work in progress.
+function build_hooks_settings(connection, terminal_id, options) {
   const hooks = {};
   for (const event_name of HOOK_EVENTS) {
     hooks[event_name] = [
@@ -53,13 +54,15 @@ function build_hooks_settings(connection, terminal_id) {
       },
     ];
   }
-  return { hooks };
+  const settings = { hooks };
+  if (options && options.agent_kit === true) settings.worktree = { baseRef: 'head' };
+  return settings;
 }
 
 // Writes <hooks_dir>/<terminal_id>.json (atomic: tmp file, then rename). Returns the file path.
-function write_hooks_file(hooks_dir, terminal_id, connection) {
+function write_hooks_file(hooks_dir, terminal_id, connection, options) {
   const file_path = hooks_file_for(hooks_dir, terminal_id);
-  const settings = build_hooks_settings(connection, terminal_id);
+  const settings = build_hooks_settings(connection, terminal_id, options);
   fs.mkdirSync(hooks_dir, { recursive: true });
   const tmp_path = `${file_path}.tmp`;
   fs.writeFileSync(tmp_path, JSON.stringify(settings, null, 2), 'utf8');
@@ -79,10 +82,11 @@ function delete_hooks_file(hooks_dir, terminal_id) {
 }
 
 // Command line for a claude pane, run through cmd.exe (claude is an npm .cmd shim).
-//   with hooks:    claude --settings "<hooks file>"  [--resume <session id>]
+//   with hooks:    claude --settings "<hooks file>"  [--plugin-dir "<agent kit>"]  [--resume <session id>]
 //   without hooks: claude  [--resume <session id>]
-// The session id is checked here because it ends up in a shell command line.
-function build_claude_command(hooks_file, resume_session_id) {
+// The session id is checked here because it ends up in a shell command line. The agent kit needs the settings
+// file for its worktree base, so it is only added next to one.
+function build_claude_command(hooks_file, resume_session_id, plugin_dir) {
   const has_resume = resume_session_id !== undefined && resume_session_id !== null && resume_session_id !== '';
   if (has_resume && !is_valid_session_id(resume_session_id)) {
     throw new Error('resume session id has characters that are not allowed');
@@ -92,6 +96,10 @@ function build_claude_command(hooks_file, resume_session_id) {
     // cmd.exe expands %NAME% even inside quotes, so % is refused as well as quotes and line breaks.
     if (/["%\r\n]/.test(hooks_file)) throw new Error('hooks file path has characters that are not allowed');
     parts.push('--settings', `"${hooks_file}"`);
+    if (plugin_dir) {
+      if (/["%\r\n]/.test(plugin_dir)) throw new Error('agent kit path has characters that are not allowed');
+      parts.push('--plugin-dir', `"${plugin_dir}"`);
+    }
   }
   if (has_resume) parts.push('--resume', resume_session_id);
   return parts.join(' ');

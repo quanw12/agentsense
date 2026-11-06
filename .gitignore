@@ -16,3 +16,8 @@ Thumbs.db
 
 # ZCode agent workspace state
 .zcode/
+
+# Claude Code: per-run plans and reports, worktrees, personal settings
+.agent/
+.claude/worktrees/
+.claude/settings.local.json
