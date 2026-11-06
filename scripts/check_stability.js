@@ -9,6 +9,8 @@ const files = require('../src/main/ipc_files');
 const { resolve_inside } = require('../src/main/path_guard');
 const { create_limiter } = require('../src/main/rate_limit');
 const { CAPABILITIES, model_env, assert_provider_compatible } = require('../src/main/cli_capabilities');
+const agent_kit = require('../src/main/agent_kit');
+const claude_hooks = require('../src/main/claude_hooks');
 const catalog = require('../src/renderer/agents');
 
 let failed = 0;
@@ -189,6 +191,33 @@ providers.set_file_for_tests(null);
   let blocked = false;
   try { assert_provider_compatible('terminal', 'openai'); } catch (error) { blocked = true; }
   check('terminal rejects a provider', blocked);
+
+  const kit_file = path.join(root, 'agent_kit.json');
+  check('agent kit is on by default', agent_kit.is_enabled(kit_file));
+  check('a corrupt agent kit file leaves it on', (() => {
+    fs.writeFileSync(kit_file, '{not json');
+    return agent_kit.is_enabled(kit_file);
+  })());
+  agent_kit.set_enabled(kit_file, false);
+  check('turning the agent kit off survives a reload', agent_kit.is_enabled(kit_file) === false);
+  check('a pane starts without the kit when it is off', agent_kit.plugin_dir_for_launch(kit_file) === null);
+  agent_kit.set_enabled(kit_file, true);
+  check('a pane gets the shipped kit when it is on', agent_kit.plugin_dir_for_launch(kit_file) === agent_kit.KIT_DIR);
+  check('the shipped kit has its lead and worker', ['skills/lead/SKILL.md', 'skills/lead/plan-template.md', 'agents/worker.md']
+    .every((rel) => fs.existsSync(path.join(agent_kit.KIT_DIR, rel))));
+  check('a missing kit folder is not used', agent_kit.plugin_dir_for_launch(kit_file, path.join(root, 'no-kit')) === null);
+  const percent_kit = path.join(root, '100%kit');
+  fs.mkdirSync(path.join(percent_kit, '.claude-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(percent_kit, '.claude-plugin', 'plugin.json'), '{}');
+  check('a kit path that cmd.exe would expand is not used', agent_kit.plugin_dir_for_launch(kit_file, percent_kit) === null);
+
+  const connection = { port: 1234, token: 'token' };
+  check('kit panes branch workers from HEAD', claude_hooks.build_hooks_settings(connection, 'pane-1', { agent_kit: true }).worktree.baseRef === 'head');
+  check('other panes keep the worktree default', claude_hooks.build_hooks_settings(connection, 'pane-1').worktree === undefined);
+  check('the kit is added beside the settings file and before resume',
+    claude_hooks.build_claude_command('C:\\h.json', 'abc', 'C:\\My Kit') === 'claude --settings "C:\\h.json" --plugin-dir "C:\\My Kit" --resume abc');
+  check('the kit is not added without a settings file', claude_hooks.build_claude_command(null, null, 'C:\\kit') === 'claude');
+  check('without the kit the command is unchanged', claude_hooks.build_claude_command('C:\\h.json') === 'claude --settings "C:\\h.json"');
 
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nStability checks passed');
   process.exit(failed ? 1 : 0);

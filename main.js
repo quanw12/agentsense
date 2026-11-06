@@ -27,6 +27,7 @@ const { register_agent_ipc } = require('./src/main/ipc_agents');
 const { register_clipboard_ipc } = require('./src/main/ipc_clipboard');
 const { register_session_ipc } = require('./src/main/ipc_sessions');
 const { register_providers_ipc } = require('./src/main/ipc_providers');
+const { register_agent_kit_ipc } = require('./src/main/ipc_agent_kit');
 const { register_file_ipc } = require('./src/main/ipc_files');
 const { register_mobile_ipc } = require('./src/main/ipc_mobile');
 const { get_hook_server } = require('./src/main/hook_server');
@@ -304,6 +305,7 @@ if (!got_lock) {
     register_terminal_ipc();
     register_session_ipc();
     register_providers_ipc();
+    register_agent_kit_ipc();
     register_file_ipc();
     // Starts the mobile access server itself when it was left enabled (mobile.json).
     register_mobile_ipc();

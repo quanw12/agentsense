@@ -16,6 +16,7 @@ const claude_hooks = require('./claude_hooks');
 const { get_hook_server } = require('./hook_server');
 const cli_capabilities = require('./cli_capabilities');
 const providers_store = require('./providers_store');
+const agent_kit = require('./agent_kit');
 
 const RING_BUFFER_LIMIT = 200 * 1024; // characters kept per terminal for repaint after reload
 const DEFAULT_COLS = 80;
@@ -240,8 +241,9 @@ async function create_terminal_inner(opts) {
   try {
     let spawn_command = base_command;
     if (wrap_claude) {
-      if (connection) hooks_file = claude_hooks.write_hooks_file(hooks_dir(), terminal_id, connection);
-      spawn_command = claude_hooks.build_claude_command(hooks_file, resume_session_id);
+      const kit_dir = connection ? agent_kit.plugin_dir_for_launch() : null;
+      if (connection) hooks_file = claude_hooks.write_hooks_file(hooks_dir(), terminal_id, connection, { agent_kit: Boolean(kit_dir) });
+      spawn_command = claude_hooks.build_claude_command(hooks_file, resume_session_id, kit_dir);
     }
     const spawn_spec = resolve_spawn(spawn_command);
     // PATH is read fresh so panes can run agents installed after the app started. env_extra carries the

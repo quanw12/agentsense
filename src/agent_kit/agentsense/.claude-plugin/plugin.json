@@ -1,0 +1,8 @@
+{
+  "name": "agentsense",
+  "displayName": "AgentSense agent kit",
+  "version": "1.0.0",
+  "description": "Plan a job with /agentsense:lead and run its tasks in parallel workers, each in its own git worktree.",
+  "author": { "name": "Anh Quân (quanw12)" },
+  "license": "MIT"
+}
