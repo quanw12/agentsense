@@ -118,6 +118,7 @@
     const on_new_session = as_callback(opts.on_new_session);
     const on_select_session = as_callback(opts.on_select_session);
     const on_close_session = as_callback(opts.on_close_session);
+    const on_mode_change = as_callback(opts.on_mode_change);
 
     let workspaces = [];
     let counts = {};
@@ -164,7 +165,30 @@
     list.setAttribute('aria-label', 'Workspaces');
     const hint = create_element('p', 'sidebar_empty', EMPTY_HINT);
     hint.hidden = true;
-    root.append(header, list, hint);
+    const mode_switcher = create_element('div', 'sidebar_mode_switcher');
+    const grid_mode_btn = create_element('button', 'sidebar_mode_btn active', '🧩 Grid');
+    grid_mode_btn.type = 'button';
+    grid_mode_btn.dataset.mode = 'grid';
+    grid_mode_btn.title = 'Terminal Grid mode';
+    const squad_mode_btn = create_element('button', 'sidebar_mode_btn', '💬 Squad');
+    squad_mode_btn.type = 'button';
+    squad_mode_btn.dataset.mode = 'squad';
+    squad_mode_btn.title = 'OpenMausBot-style AI Bot Squad Chat & Sandbox VMs';
+    mode_switcher.append(grid_mode_btn, squad_mode_btn);
+    function set_mode(mode) {
+      const is_squad = mode === 'squad';
+      grid_mode_btn.classList.toggle('active', !is_squad);
+      squad_mode_btn.classList.toggle('active', is_squad);
+    }
+    grid_mode_btn.addEventListener('click', () => {
+      set_mode('grid');
+      on_mode_change('grid');
+    });
+    squad_mode_btn.addEventListener('click', () => {
+      set_mode('squad');
+      on_mode_change('squad');
+    });
+    root.append(header, mode_switcher, list, hint);
     container.replaceChildren(root);
     container.dataset.loaded = 'false';
 
@@ -617,6 +641,7 @@
       get_statuses: () => Object.fromEntries(status_by_terminal),
       status_subscription_count: () => status_subscription_total,
       build_dashboard_rows,
+      set_mode,
     };
   }
 

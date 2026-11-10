@@ -33,6 +33,7 @@ const { register_mobile_ipc } = require('./src/main/ipc_mobile');
 const { get_hook_server } = require('./src/main/hook_server');
 const { get_mobile_server } = require('./src/main/mobile_server');
 const { register_telegram_ipc, stop_telegram_bot } = require('./src/main/ipc_telegram');
+const { register_squad_ipc } = require('./src/main/ipc_squad');
 
 const WINDOW_WIDTH = 1400;
 const WINDOW_HEIGHT = 900;
@@ -180,6 +181,7 @@ function create_main_window() {
       nodeIntegration: false,
       // Chromium's PDF viewer, used by the file viewer pane for .pdf files.
       plugins: true,
+      webviewTag: true,
     },
   });
   // No menu bar at all (File / Edit / View / Window), and no space reserved for one.
@@ -312,6 +314,7 @@ if (!got_lock) {
     register_mobile_ipc();
     // Starts the Telegram bot when it was left on (telegram.json).
     register_telegram_ipc();
+    register_squad_ipc();
     // Claude Code hooks post to this server. Without it the app still works; claude panes just get no status.
     try {
       await get_hook_server().start();

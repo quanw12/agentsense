@@ -1,10 +1,11 @@
-// Renderer entry. Creates the workspace sidebar and the terminal grid, and switches the main area
-// between the grid (#terminal_grid) and the inline launch page (#launch_host). Exactly one of them is visible.
+// Renderer entry. Creates the workspace sidebar, the terminal grid, and the OpenMausBot-style Squad Chat view,
+// and switches the main area between #terminal_grid, #launch_host, and #squad_host.
 // Wrapped in an IIFE because classic scripts share one global scope with the other renderer scripts.
 (function app_module() {
   const warned_keys = new Set();
   const GRID_ID = 'terminal_grid';
   const LAUNCH_HOST_ID = 'launch_host';
+  const SQUAD_HOST_ID = 'squad_host';
 
   // A missing module or method is reported once; the app keeps running without that feature.
   function warn_once(key, message) {
@@ -50,9 +51,11 @@
   async function start_app() {
     const grid_element = document.getElementById(GRID_ID);
     const launch_host = document.getElementById(LAUNCH_HOST_ID);
+    const squad_host = document.getElementById(SQUAD_HOST_ID);
     // What the main area shows right now, and which workspace the grid's active view was last shown for
     // (null = the grid's empty state). A hidden grid is re-shown on reveal so its panes refit.
     let grid_visible = true;
+    let squad_visible = false;
     let grid_workspace_id = null;
     // At most one launch page: { mount_id, workspace, instance }.
     let page = null;
@@ -73,6 +76,15 @@
       on_new_session: (workspace) => show_launch_page(workspace),
       on_select_session: (workspace, terminal_id) => show_session(workspace, terminal_id),
       on_close_session: (workspace_id, terminal_id) => call_grid('close_session', [terminal_id]),
+      on_mode_change: (mode) => {
+        if (mode === 'squad') {
+          show_squad_chat(sidebar.get_selected());
+        } else {
+          squad_visible = false;
+          if (squad_host) squad_host.hidden = true;
+          select_workspace(sidebar.get_selected());
+        }
+      },
     });
     const grid = create_grid({
       on_counts_change: (counts) => sidebar.set_counts(counts),
@@ -86,6 +98,23 @@
       },
     });
 
+    const squad_chat =
+      squad_host && typeof window.init_squad_chat === 'function'
+        ? window.init_squad_chat({
+            container: squad_host,
+            on_open_terminal_pane: (workspace, terminal_id) => {
+              if (workspace && terminal_id) {
+                show_session(workspace, terminal_id);
+              } else {
+                reveal_grid(workspace || sidebar.get_selected());
+              }
+            },
+            on_switch_to_grid: () => {
+              reveal_grid(sidebar.get_selected());
+            },
+          })
+        : null;
+
     // Calls a grid method if the grid module provides it; otherwise logs once and does nothing.
     function call_grid(method_name, args) {
       const method = grid[method_name];
@@ -98,8 +127,23 @@
 
     function set_grid_visible(visible) {
       grid_visible = visible;
+      squad_visible = false;
       grid_element.hidden = !visible;
       launch_host.hidden = visible;
+      if (squad_host) squad_host.hidden = true;
+      if (typeof sidebar.set_mode === 'function') sidebar.set_mode('grid');
+    }
+
+    function show_squad_chat(workspace) {
+      view_serial += 1;
+      destroy_page();
+      grid_visible = false;
+      squad_visible = true;
+      grid_element.hidden = true;
+      launch_host.hidden = true;
+      if (squad_host) squad_host.hidden = false;
+      if (typeof sidebar.set_mode === 'function') sidebar.set_mode('squad');
+      if (squad_chat) squad_chat.show_workspace(workspace || sidebar.get_selected() || null);
     }
 
     function grid_show(workspace) {
@@ -223,6 +267,10 @@
     async function select_workspace(workspace) {
       view_serial += 1;
       const serial = view_serial;
+      if (squad_visible) {
+        if (squad_chat) squad_chat.show_workspace(workspace || null);
+        return;
+      }
       if (!workspace) {
         reveal_grid(null);
         return;
@@ -273,12 +321,23 @@
     // Test hooks: the page can be inspected from Playwright through these.
     window.__sidebar = sidebar;
     window.__grid = grid;
+    window.__squad_chat = squad_chat;
     window.__mount_launch_page = window.mount_launch_page;
     window.__show_launch_page = async (workspace_id) => {
       const workspaces = await window.hub.workspaces.list();
       const workspace = workspaces.find((item) => item.id === workspace_id);
       if (!workspace) return false;
       show_launch_page(workspace);
+      return true;
+    };
+    window.__show_squad_chat = async (workspace_id) => {
+      if (!workspace_id) {
+        show_squad_chat(sidebar.get_selected());
+        return true;
+      }
+      const workspaces = await window.hub.workspaces.list();
+      const workspace = workspaces.find((item) => item.id === workspace_id) || sidebar.get_selected();
+      show_squad_chat(workspace);
       return true;
     };
 
