@@ -107,6 +107,23 @@
   min-height: 0;
 }
 
+.sidebar_appearance {
+  flex: 0 0 auto;
+  margin: 6px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.sidebar_appearance:hover,
+.sidebar_appearance:focus-visible {
+  border-color: var(--accent_line);
+}
+
 .workspace_item {
   list-style: none;
 }

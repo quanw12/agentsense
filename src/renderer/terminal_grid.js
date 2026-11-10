@@ -67,27 +67,42 @@
     ui.workspaces[workspace_id] = Object.assign({}, ui.workspaces[workspace_id] || {}, patch);
     write_ui(ui);
   }
-  const TERMINAL_OPTIONS = {
-    fontFamily: '"Cascadia Mono", Consolas, monospace',
-    fontSize: 13,
-    scrollback: 5000,
-    cursorBlink: true,
-    theme: {
-      // Matches the --bg / --text tokens in styles.css.
-      background: '#000000',
-      foreground: '#ececec',
-      cursor: '#ececec',
-      cursorAccent: '#000000',
-      selectionBackground: 'rgba(91, 141, 239, 0.35)',
-      // "black" is lifted from the old #1b1b1b so it stays visible on the pure black background.
-      black: '#2b2b30',
+  function css_token(name, fallback) {
+    try {
+      const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return value || fallback;
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  function accent_selection(accent) {
+    const match = /^#([0-9a-fA-F]{6})$/.exec(accent || '');
+    if (!match) return 'rgba(91, 141, 239, 0.35)';
+    const n = parseInt(match[1], 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, 0.35)`;
+  }
+
+  // Reads the live tokens so a theme change recolors an open pane instead of restarting it.
+  function terminal_theme() {
+    const bg = css_token('--bg', '#000000');
+    const text = css_token('--text', '#ececec');
+    const accent = css_token('--accent', '#5b8def');
+    const light = document.documentElement.dataset.themeResolved === 'light';
+    return {
+      background: bg,
+      foreground: text,
+      cursor: text,
+      cursorAccent: bg,
+      selectionBackground: accent_selection(accent),
+      black: light ? '#1a1c1f' : '#2b2b30',
       red: '#e06c75',
       green: '#98c379',
       yellow: '#e5c07b',
       blue: '#61afef',
       magenta: '#c678dd',
       cyan: '#56b6c2',
-      white: '#d0d0d0',
+      white: light ? '#3a3f46' : '#d0d0d0',
       brightBlack: '#5c6370',
       brightRed: '#ef7b84',
       brightGreen: '#a9d18e',
@@ -95,9 +110,19 @@
       brightBlue: '#7cc0f5',
       brightMagenta: '#d592e8',
       brightCyan: '#6fc8d2',
-      brightWhite: '#ffffff',
-    },
-  };
+      brightWhite: light ? '#1a1c1f' : '#ffffff',
+    };
+  }
+
+  function terminal_options() {
+    return {
+      fontFamily: '"Cascadia Mono", Consolas, monospace',
+      fontSize: 13,
+      scrollback: 5000,
+      cursorBlink: true,
+      theme: terminal_theme(),
+    };
+  }
 
   // Module-wide routing. One hub subscription per page routes events by terminal_id.
   const PANE_BY_TERMINAL = new Map(); // terminal_id -> pane (panes of every grid)
@@ -105,6 +130,14 @@
   // terminal_id -> { workspace_id, alive, title, agent_id, agent_label }
   const EXTERNAL_TERMINALS = new Map();
   const LIVE_GRIDS = new Set();
+  document.addEventListener('agentsense:appearance', () => {
+    let theme = null;
+    try { theme = terminal_theme(); } catch (error) { return; }
+    for (const pane of PANE_BY_TERMINAL.values()) {
+      if (!pane || pane.disposed || !pane.term) continue;
+      try { pane.term.options.theme = theme; } catch (error) { /* A closing xterm is left alone. */ }
+    }
+  });
   let hub_subscribed = false;
   let pane_serial = 0;
   let file_check_timer = 0;
@@ -1110,7 +1143,7 @@
     const body = create_el('div', 'tg-pane-body');
     element.append(titlebar, body);
 
-    const term = new window.Terminal(Object.assign({}, TERMINAL_OPTIONS));
+    const term = new window.Terminal(terminal_options());
     const fit = new window.FitAddon.FitAddon();
     term.loadAddon(fit);
 

@@ -13,8 +13,8 @@
   --muted: #7f7f88;
 
   --accent: #5b8def;
-  --accent_fill: rgba(91, 141, 239, 0.1);
-  --accent_line: rgba(91, 141, 239, 0.6);
+  --accent_fill: color-mix(in srgb, var(--accent) 10%, transparent);
+  --accent_line: color-mix(in srgb, var(--accent) 60%, transparent);
 
   --running: #3fb950;
   --exited: #5c5c63;
@@ -27,6 +27,27 @@
   --warning: #d9a441;
   --install_fill: #2f5fd0;
   --scroll_thumb: #26262b;
+}
+
+/* Light tokens. data-theme-resolved is set by appearance.js for Light and for Windows when Windows is light. */
+html[data-theme-resolved="light"] {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --sidebar_bg: #f3f4f6;
+  --panel: #ffffff;
+  --panel_raised: #f6f7f9;
+  --border: #e2e4e8;
+  --border_strong: #cfd3da;
+  --text: #1a1c1f;
+  --muted: #5c6370;
+
+  --running: #1f8a3b;
+  --exited: #8b909a;
+
+  --danger_text: #b4232a;
+  --warning: #8a6210;
+  --scroll_thumb: #c5c8d0;
 }
 
 * {
