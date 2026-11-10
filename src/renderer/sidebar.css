@@ -433,3 +433,44 @@
 .sidebar_empty[hidden] {
   display: none;
 }
+
+
+/* Mode switcher bar between Terminal Grid and OpenMausBot-style Squad Chat */
+.sidebar_mode_switcher {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.sidebar_mode_btn {
+  flex: 1 1 0;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.sidebar_mode_btn:hover {
+  background: var(--panel_raised);
+  color: var(--text);
+}
+
+.sidebar_mode_btn.active {
+  background: var(--accent_fill);
+  border-color: var(--accent_line);
+  color: var(--text);
+  font-weight: 600;
+}

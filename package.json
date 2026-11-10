@@ -27,7 +27,9 @@
     "screenshots": "electron scripts/capture_screenshots.js",
     "smoke:mobile": "electron scripts/smoke_mobile.js",
     "smoke:telegram": "electron scripts/smoke_telegram.js",
-    "smoke:workbench": "electron scripts/smoke_workbench.js"
+    "smoke:workbench": "electron scripts/smoke_workbench.js",
+    "smoke:squad": "electron scripts/smoke_squad.js",
+    "sync:app": "node scripts/sync_app.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

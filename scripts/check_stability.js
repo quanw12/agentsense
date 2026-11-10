@@ -13,6 +13,8 @@ const { pairing_targets } = require('../src/main/mobile_pairing');
 const agent_kit = require('../src/main/agent_kit');
 const claude_hooks = require('../src/main/claude_hooks');
 const catalog = require('../src/renderer/agents');
+const squad_store = require('../src/main/bot_squad_store');
+const sandbox_env = require('../src/main/sandbox_env');
 
 let failed = 0;
 function check(name, ok) {
@@ -243,6 +245,24 @@ providers.set_file_for_tests(null);
     claude_hooks.build_claude_command('C:\\h.json', 'abc', 'C:\\My Kit') === 'claude --settings "C:\\h.json" --plugin-dir "C:\\My Kit" --resume abc');
   check('the kit is not added without a settings file', claude_hooks.build_claude_command(null, null, 'C:\\kit') === 'claude');
   check('without the kit the command is unchanged', claude_hooks.build_claude_command('C:\\h.json') === 'claude --settings "C:\\h.json"');
+
+  const squad_file = path.join(root, 'bot_squad.json');
+  const sq_initial = squad_store.read_state(squad_file);
+  check('squad store seeds 4 starter bots and 3 channels', sq_initial.bots.length === 4 && sq_initial.channels.length === 3);
+  const custom_bot = squad_store.save_bot({ name: 'Test Bot', handle: '@tester', agent_id: 'codex', sandbox_mode: 'wsl' }, squad_file);
+  check('custom bot saves with normalized handle and sandbox mode', custom_bot.handle === 'tester' && custom_bot.sandbox_mode === 'wsl');
+  const exported_md = squad_store.export_playbook(squad_file);
+  check('exported playbook markdown includes bots and channels', exported_md.includes('## Bots') && exported_md.includes('(@tester)'));
+  const imported_sq = squad_store.import_playbook(exported_md, squad_file);
+  check('imported playbook restores the bot roster', imported_sq.bots.some((b) => b.handle === 'tester'));
+  const approval = sandbox_env.detect_approval_prompt('Do you want to proceed?\n ❯ 1. Yes\n   2. No', null);
+  check('inline approval detector catches confirmation prompt', Boolean(approval && approval.required));
+  const wsl_spec = sandbox_env.build_bot_launch_spec(
+    { agent_id: 'claude', sandbox_mode: 'wsl' },
+    { id: 'claude', command: 'claude' },
+    { worktree: true, wsl: true, docker: false }
+  );
+  check('wsl sandbox mode wraps command in wsl.exe and keeps worktree isolation', wsl_spec.effective_sandbox === 'wsl' && wsl_spec.command.startsWith('wsl.exe') && wsl_spec.use_worktree === true);
 
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nStability checks passed');
   process.exit(failed ? 1 : 0);
