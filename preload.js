@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('hub', {
     import_mapped: (root_path, source_path, rel) => ipcRenderer.invoke('files:import_mapped', root_path, source_path, rel),
     write: (root_path, rel, content, expected_mtime, loaded_bytes) => ipcRenderer.invoke('files:write', root_path, rel, content, expected_mtime, loaded_bytes),
     search: (root_path, query) => ipcRenderer.invoke('files:search', root_path, query),
+    search_text: (root_path, query) => ipcRenderer.invoke('files:search_text', root_path, query),
     stat: (root_path, rel) => ipcRenderer.invoke('files:stat', root_path, rel),
     watch: (root_path, options) => ipcRenderer.invoke('files:watch', root_path, options),
     unwatch: (root_path) => ipcRenderer.invoke('files:unwatch', root_path),

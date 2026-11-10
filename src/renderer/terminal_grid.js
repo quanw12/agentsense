@@ -25,6 +25,8 @@
     claude: { agent_id: 'claude', label: 'Claude Code' },
   };
   const STATUS_TEXT = { starting: 'starting', running: 'running', exited: 'exited' };
+  // A running pane with no Claude hook is "output" while bytes arrive, then "quiet".
+  const OUTPUT_QUIET_MS = 8000;
   const WORKTREE_NOTICE_MS = 8000;
   const AGENT_INSTALL_ID = 'install';
 
@@ -210,8 +212,20 @@
     document.addEventListener('drop', end_internal_drag, true);
     window.hub.terminals.on_data((terminal_id, data) => {
       const pane = PANE_BY_TERMINAL.get(terminal_id);
-      if (pane) pane.term.write(data);
+      if (!pane) return;
+      pane.term.write(data);
+      mark_pane_output(pane);
     });
+    window.setInterval(() => {
+      const now = Date.now();
+      for (const pane of PANE_BY_TERMINAL.values()) {
+        if (pane.disposed || pane.status !== 'running' || pane.activity !== 'output') continue;
+        if (now - (pane.last_output_at || 0) <= OUTPUT_QUIET_MS) continue;
+        pane.activity = 'quiet';
+        paint_activity(pane);
+        notify_grid(pane.grid);
+      }
+    }, 2000);
     window.hub.terminals.on_exit((terminal_id, exit_code) => route_exit(terminal_id, exit_code));
     // Panes created or closed by the phone (mobile_server.js -> terminals:created / terminals:closed).
     window.hub.terminals.on_created((info) => route_created(info));
@@ -342,6 +356,7 @@
       agent_id: pane.agent_id,
       agent_label: pane.agent_label,
       status: pane.status === 'exited' ? 'exited' : 'running',
+      activity: pane.status === 'running' ? (pane.activity === 'output' ? 'output' : 'quiet') : null,
     };
   }
 
@@ -419,7 +434,11 @@
       } else if (event.key.toLowerCase() === 'p' && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
-        void open_quick_open(grid);
+        open_quick_open(grid, 'name');
+      } else if (event.key.toLowerCase() === 'f' && event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        open_quick_open(grid, 'text');
       } else if (event.key === 'Tab') {
         const view = grid.active_view;
         if (!view) return;
@@ -543,7 +562,7 @@
     }
     const files = view.panes.reduce((total, pane) => total + (pane.kind === 'file' ? pane.files.length : 0), 0);
     grid.dom.note.textContent = `${view.workspace.name} / ${count} agent${count === 1 ? '' : 's'}${files ? ` · ${files} file${files === 1 ? '' : 's'}` : ''}`;
-    grid.dom.note.title = 'Ctrl+Tab moves focus · Drag a divider to resize · Ctrl+P finds a file';
+    grid.dom.note.title = 'Ctrl+Tab moves focus · Drag a divider to resize · Ctrl+P finds a file · Ctrl+Shift+F finds text';
   }
 
   function show_banner(grid, message) {
@@ -2158,48 +2177,18 @@
     pane.forget_btn = button;
   }
 
-  async function open_quick_open(grid) {
+  function open_quick_open(grid, mode) {
     const view = grid.active_view;
-    if (!view) return;
-    let overlay = view.quick;
-    if (!overlay) {
-      overlay = create_el('div', 'tg-quick');
-      const input = create_el('input', 'tg-quick-input');
-      input.type = 'text';
-      input.placeholder = 'File name in this root';
-      const list = create_el('div', 'tg-quick-list');
-      overlay.append(input, list);
-      view.root.append(overlay);
-      view.quick = overlay;
-      const live_root = () => (view.file_panel && view.file_panel.current_root ? view.file_panel.current_root() : view.workspace.path);
-      input.addEventListener('keydown', async (event) => {
-        if (event.key === 'Escape') { overlay.hidden = true; return; }
-        if (event.key === 'Enter') {
-          const chosen = list.querySelector('.tg-quick-item');
-          if (chosen) open_in_file_page(grid, view, chosen.dataset.path, live_root());
-          overlay.hidden = true;
-        }
-      });
-      input.addEventListener('input', async () => {
-        const found = await window.hub.files.search(live_root(), input.value);
-        list.textContent = '';
-        for (const item of (found && found.results) || []) {
-          const row = create_el('button', 'tg-quick-item', item.rel);
-          row.type = 'button';
-          row.dataset.path = item.rel;
-          row.addEventListener('click', () => {
-            open_in_file_page(grid, view, item.rel, live_root());
-            overlay.hidden = true;
-          });
-          list.append(row);
-        }
-      });
-    }
-    overlay.hidden = false;
-    const input = overlay.querySelector('input');
-    input.value = '';
-    input.focus();
-    input.dispatchEvent(new Event('input'));
+    if (!view || typeof window.open_workspace_search !== 'function') return;
+    const live_root = () => (view.file_panel && view.file_panel.current_root ? view.file_panel.current_root() : view.workspace.path);
+    window.open_workspace_search({
+      host: view.root,
+      mode: mode === 'text' ? 'text' : 'name',
+      get_root: live_root,
+      on_open: (rel, root) => open_in_file_page(grid, view, rel, root || live_root()),
+      search_names: (root, query) => window.hub.files.search(root, query),
+      search_text: (root, query) => window.hub.files.search_text(root, query),
+    });
   }
 
   // -> { leaf, parent, index, grand, grand_index } for the leaf that holds pane, or null.
@@ -2600,14 +2589,35 @@
     });
   }
 
+  function paint_activity(pane) {
+    if (!pane.dot) return;
+    const outputting = pane.status === 'running' && pane.activity === 'output';
+    pane.dot.classList.toggle('tg-dot-output', outputting);
+    pane.dot.classList.toggle('tg-dot-quiet', pane.status === 'running' && !outputting);
+    if (pane.status === 'running') pane.dot.title = outputting ? 'output' : 'quiet';
+  }
+
+  // Bytes arrived. The sidebar hears about the change only on the quiet -> output edge.
+  function mark_pane_output(pane) {
+    if (!pane || pane.disposed || pane.status !== 'running') return;
+    pane.last_output_at = Date.now();
+    if (pane.activity === 'output') return;
+    pane.activity = 'output';
+    paint_activity(pane);
+    notify_grid(pane.grid);
+  }
+
   function set_pane_status(pane, status, exit_code) {
     pane.status = status;
     pane.exit_code = exit_code;
+    if (status !== 'running') pane.activity = null;
     pane.element.setAttribute('data-status', status);
+    pane.element.setAttribute('data-activity', pane.activity || '');
     pane.element.setAttribute('data-terminal-id', pane.terminal_id || '');
     pane.dot.classList.toggle('tg-dot-running', status === 'running');
     pane.dot.title = STATUS_TEXT[status];
     pane.restart_btn.hidden = status !== 'exited';
+    paint_activity(pane);
   }
 
   function bind_terminal(pane, terminal_id, status, exit_code) {

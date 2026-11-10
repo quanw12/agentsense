@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add Squad chat: a roster, channels, and one computer per bot (git worktree, WSL shell, Docker shell, or the shared folder). A Claude lead is pointed at `/agentsense:lead` for multi-file jobs. WSL and Docker are labeled as shells. Docker drops capabilities and blocks new privileges. A bot stays bound to the terminal it started, and a model is passed only when that CLI has a verified model variable.
+- Show output or quiet on every running pane. A Claude hook status still wins when the hub has one.
+- Add Ctrl+Shift+F to search file text in the workspace. Ctrl+P still finds file names. Both skip dependency and build folders.
 - Add a Telegram bot: drive panes from a chat on any network, with live screens, key buttons, notifications when Claude Code finishes or needs you, and `/diff`, `/ls`, `/cat`. It obeys one account paired by a one-time code, and the token is encrypted with DPAPI.
 - Pin node-pty 1.2.0-beta.17 with the upstream ConPTY handle synchronization fix; wait for native terminal cleanup during close and quit.
 - Reject new launches during shutdown, share concurrent close completion, and recover the saved Claude conversation ID on restart.

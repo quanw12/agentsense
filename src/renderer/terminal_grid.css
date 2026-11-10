@@ -344,6 +344,14 @@
   background: var(--running);
 }
 
+.tg-dot.tg-dot-running.tg-dot-quiet {
+  background: var(--exited);
+}
+
+.tg-dot.tg-dot-running.tg-dot-output {
+  background: var(--accent);
+}
+
 /* Agent logo, 16px, before the pane name; fixed size so the title bar never shifts. */
 .tg-pane-logo {
   flex: 0 0 auto;
@@ -590,12 +598,33 @@
   border: 1px solid #333;
   padding: 8px;
 }
+.tg-quick-hint {
+  color: #888;
+  font-size: 11px;
+  min-height: 16px;
+  margin: 4px 0;
+}
+.tg-quick-list {
+  max-height: 280px;
+  overflow: auto;
+}
 .tg-quick-input, .tg-quick-item {
   width: 100%;
   box-sizing: border-box;
   background: #000;
   color: #eee;
   border: 1px solid #333;
+  text-align: left;
+}
+.tg-quick-item.tg-quick-active {
+  background: #222;
+}
+.tg-quick-path, .tg-quick-meta {
+  display: block;
+}
+.tg-quick-meta {
+  color: #888;
+  font-size: 11px;
 }
 .tg-version { margin-left: auto; color: #888; font-size: 12px; }
 

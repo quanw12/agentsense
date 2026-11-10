@@ -15,6 +15,9 @@ const EDIT_MAX_BYTES = TEXT_MAX_BYTES * 8;
 const COPY_MAX_NAME = 180;
 const COPY_BATCH_MAX = 200;
 const SEARCH_MAX = 200;
+const TEXT_SEARCH_MAX = 80;
+const TEXT_SEARCH_SCAN_MAX = 4000;
+const TEXT_SEARCH_FILE_BYTES = 256 * 1024;
 const DOCUMENT_MAX_BYTES = 1024 * 1024 * 40;
 const WATCH_DEBOUNCE_MS = 200;
 
@@ -30,6 +33,13 @@ const OFFICE_EXTS = new Set([
   '.doc', '.dot', '.rtf', '.odt', '.xls', '.xlsx', '.xlsm', '.ods', '.ppt', '.pptx', '.odp', '.pages', '.numbers', '.key',
 ]);
 const SKIP_DIR = new Set(['node_modules', '.git']);
+const SKIP_SEARCH_DIR = new Set(['dist', 'app', 'app.staging', 'app.previous', '.claude', 'coverage']);
+const BINARY_EXT = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.avif', '.pdf',
+  '.mp4', '.webm', '.mov', '.m4v', '.ogv', '.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac',
+  '.exe', '.dll', '.node', '.pak', '.zip', '.gz', '.7z', '.woff', '.woff2', '.ttf', '.eot',
+  '.docx', '.xlsx', '.pptx', '.bin', '.pdb',
+]);
 
 const watches = new Map();
 const copy_jobs = new Map();
@@ -47,6 +57,10 @@ function resolve_under(root, value) {
 
 function heavy_dir(name) {
   return SKIP_DIR.has(name);
+}
+
+function skip_search_dir(name) {
+  return heavy_dir(name) || SKIP_SEARCH_DIR.has(name) || String(name).endsWith('.worktrees');
 }
 
 async function list_dir(root_path, rel) {
@@ -410,6 +424,59 @@ async function search_files(root_path, query) {
   return { results: found, truncated: found.length >= SEARCH_MAX };
 }
 
+// One matching line per file. Skips dependency, build, and binary files. Stops after a scan cap.
+async function search_text(root_path, query) {
+  const root_info = require_root(root_path);
+  const needle = String(query || '').trim().toLowerCase();
+  if (needle.length < 2) return { results: [], truncated: false };
+  const found = [];
+  let scanned = 0;
+  let truncated = false;
+
+  async function walk(dir, rel) {
+    if (truncated || found.length >= TEXT_SEARCH_MAX) return;
+    let entries = [];
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch (error) { return; }
+    for (const entry of entries) {
+      if (truncated || found.length >= TEXT_SEARCH_MAX) return;
+      if (scanned >= TEXT_SEARCH_SCAN_MAX) {
+        truncated = true;
+        return;
+      }
+      const child = resolve_inside(root_info.path, path.join(dir, entry.name));
+      if (!child) continue;
+      if (entry.isDirectory()) {
+        if (skip_search_dir(entry.name)) continue;
+        await walk(child.path, child.rel);
+        continue;
+      }
+      scanned += 1;
+      if (BINARY_EXT.has(path.extname(entry.name).toLowerCase())) continue;
+      let stat = null;
+      try { stat = await fs.promises.stat(child.path); } catch (error) { stat = null; }
+      if (!stat || !stat.isFile() || stat.size === 0 || stat.size > TEXT_SEARCH_FILE_BYTES) continue;
+      let buffer = null;
+      try { buffer = await fs.promises.readFile(child.path); } catch (error) { buffer = null; }
+      if (!buffer || buffer.includes(0)) continue;
+      const lines = buffer.toString('utf8').split('\n');
+      for (let i = 0; i < lines.length; i += 1) {
+        if (!lines[i].toLowerCase().includes(needle)) continue;
+        found.push({
+          name: entry.name,
+          rel: child.rel,
+          line: i + 1,
+          text: lines[i].replace(/\r$/, '').trim().slice(0, 180),
+        });
+        if (found.length >= TEXT_SEARCH_MAX) truncated = true;
+        break;
+      }
+    }
+  }
+
+  await walk(root_info.path, '');
+  return { results: found, truncated };
+}
+
 function register_file_ipc() {
   const { ipcMain, dialog, BrowserWindow } = electron_bits();
   ipcMain.handle('files:pick', async (event, root_path) => {
@@ -423,6 +490,7 @@ function register_file_ipc() {
   ipcMain.handle('files:read', (_event, root_path, rel) => read_file(root_path, rel));
   ipcMain.handle('files:write', (_event, root_path, rel, content, expected_mtime, loaded_bytes) => write_text(root_path, rel, content, expected_mtime, loaded_bytes));
   ipcMain.handle('files:search', (_event, root_path, query) => search_files(root_path, query));
+  ipcMain.handle('files:search_text', (_event, root_path, query) => search_text(root_path, query));
   ipcMain.handle('files:watch', (_event, root_path, options) => watch_root(root_path, options));
   ipcMain.handle('files:stat', (_event, root_path, rel) => stat_file(root_path, rel));
   ipcMain.handle('files:unwatch', (_event, root_path) => unwatch_root(root_path));
@@ -441,6 +509,7 @@ module.exports = {
   write_text,
   stat_file,
   search_files,
+  search_text,
   copy_in,
   import_mapped,
   resolve_under,
