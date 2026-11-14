@@ -86,9 +86,11 @@
     return typeof value === 'function' ? value : () => {};
   }
 
-  // The dot state of a session row: the hub status when there is one, else today's running / exited.
+  // Claude hook status wins. Otherwise a running pane is working while bytes arrive, then idle.
   function session_state(session, hub_info) {
     if (hub_info && HUB_STATES.includes(hub_info.status)) return hub_info.status;
+    if (session.status === STATUS_RUNNING && session.activity === 'output') return 'working';
+    if (session.status === STATUS_RUNNING && session.activity === 'quiet') return 'idle';
     return session.status === STATUS_RUNNING ? STATUS_RUNNING : STATUS_EXITED;
   }
 

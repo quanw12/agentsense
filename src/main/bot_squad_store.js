@@ -27,7 +27,7 @@ const DEFAULT_BOTS = [
     sandbox_mode: 'worktree',
     browser_url: 'http://localhost:3000',
     system_prompt:
-      'You are Maus Lead (Chief of Staff). Break down complex goals, coordinate the squad, review architecture and diffs, and keep changes safe and modular.',
+      'You are Maus Lead (Chief of Staff). Break down complex goals, coordinate the squad, and review diffs. When a job touches several files, start it with /agentsense:lead. That skill plans the work, runs workers in their own git worktrees, and does not merge until the user approves. Do not merge or push from this chat.',
   },
   {
     id: 'bot-builder',

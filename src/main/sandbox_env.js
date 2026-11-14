@@ -1,21 +1,17 @@
-// Sandbox & Virtual Environment coordinator ("Every Bot Gets a Computer").
-// Supports 4 execution isolation modes per bot on Windows:
-// - 'worktree': Isolated Git Worktree (<repo>.worktrees/<bot>) + isolated Chromium browser partition
-// - 'wsl':      WSL2 Linux VM environment mounted to the bot's working directory
-// - 'docker':   Docker container sandbox mounting the bot's working directory
-// - 'local':    Shared workspace folder + isolated Chromium browser partition
-// Also detects Human-in-the-Loop permission prompts from terminal screens to surface Inline Approval Cards.
+// How a squad bot's computer is started on Windows.
+// - worktree: a git worktree plus a separate browser profile
+// - wsl: the default WSL distro in that folder, not a private VM
+// - docker: a container with the workspace mounted read-write, not a locked sandbox
+// - local: the shared workspace folder plus a separate browser profile
+// Also notices a real approval prompt on the terminal screen.
 const { check_commands } = require('./command_check');
 const worktree = require('./worktree');
 
-const APPROVAL_PATTERNS = [
-  /do you want to (proceed|continue|run|allow|make this edit|create|delete)/i,
-  /allow\s+.*\?\s*(\(|\[)?(y\/n|yes\/no|1|y)/i,
-  /^\s*[❯>]\s*1[\.\)]\s*(yes|allow|approve|run)/im,
-  /\b1[\.\)]\s*yes\b[\s\S]{0,120}\b2[\.\)]\s*(yes|no|allow|don't)/i,
-  /\[y\/n\]|\(y\/n\)|\[Y\/n\]|\(Y\/n\)/,
-  /press enter to confirm|waiting for approval|requires approval/i,
-];
+// A real prompt, not a sentence that merely talks about approval.
+const CHOICE_LINE = /(?:^|\n)\s*(?:[❯>]\s*)?1[\.\)]\s*(yes|allow|approve|run)\b/i;
+const YN_LINE = /(?:^|\n)\s*[^\n]{0,120}(?:\[y\/n\]|\(y\/n\)|\[Y\/n\]|\(Y\/n\))/i;
+const ASK_LINE = /(?:^|\n)\s*[^\n]{0,160}\bdo you want to (?:proceed|continue|run|allow|make this edit|create|delete)\b[^\n]{0,80}\?/i;
+const DEFAULT_DOCKER_IMAGE = 'node:20-bookworm';
 
 function windows_to_wsl_path(win_path) {
   const normalized = String(win_path || '').replace(/\\/g, '/');
@@ -37,7 +33,15 @@ async function detect_sandbox_capabilities(workspace_path) {
   };
 }
 
+// A Docker image name only. Anything else falls back so the command line cannot grow a second command.
+function clean_docker_image(value) {
+  const image = String(value || '').trim();
+  if (/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,120}$/.test(image)) return image;
+  return DEFAULT_DOCKER_IMAGE;
+}
+
 // Builds the effective command and create_terminal options for a bot's chosen sandbox_mode.
+// WSL and Docker are shells around the workspace, not separate locked machines.
 // Note: when agent_id === 'claude' and base_command === 'claude' in 'worktree' or 'local' mode,
 // pty_manager.js natively wraps `claude` with --settings (hook_server) and --plugin-dir (agent_kit).
 function build_bot_launch_spec(bot, catalog_entry, capabilities) {
@@ -47,58 +51,68 @@ function build_bot_launch_spec(bot, catalog_entry, capabilities) {
       : (catalog_entry && catalog_entry.command) || 'powershell.exe';
 
   const mode = bot && typeof bot.sandbox_mode === 'string' ? bot.sandbox_mode : 'worktree';
-  const use_worktree = mode === 'worktree' || mode === 'wsl' || mode === 'docker';
+  const caps = capabilities || {};
+  const agent_id = (bot && bot.agent_id) || (catalog_entry && catalog_entry.id) || 'claude';
+  const notes = [];
+  const wants_worktree = mode === 'worktree' || mode === 'wsl' || mode === 'docker';
 
-  if (mode === 'wsl' && capabilities && capabilities.wsl) {
-    // Runs inside the user's default WSL2 Linux distribution in the current directory.
+  if (mode === 'wsl' && caps.wsl) {
+    // The user's default WSL distro, started in the bot's directory. Not a private VM.
     const inner = base_cmd === 'powershell.exe' ? 'bash' : base_cmd;
     return {
       command: `wsl.exe -- bash -lic "${inner.replace(/"/g, '\\"')}"`,
-      agent_id: bot.agent_id || 'terminal',
-      use_worktree: Boolean(capabilities.worktree),
+      agent_id,
+      use_worktree: Boolean(caps.worktree),
       effective_sandbox: 'wsl',
-      sandbox_label: 'WSL2 Linux VM',
+      sandbox_label: 'WSL shell',
+      limit_note: 'This is your default WSL distro in this folder, not a separate machine.',
     };
   }
+  if (mode === 'wsl') notes.push('WSL is not installed, so this bot stays on Windows.');
 
-  if (mode === 'docker' && capabilities && capabilities.docker) {
-    const image = process.env.AGENTSENSE_DOCKER_IMAGE || 'node:20-bookworm';
+  if (mode === 'docker' && caps.docker) {
+    const image = clean_docker_image(process.env.AGENTSENSE_DOCKER_IMAGE || DEFAULT_DOCKER_IMAGE);
     return {
-      command: `docker run --rm -it -v "%CD%:/workspace" -w /workspace ${image} bash`,
-      agent_id: bot.agent_id || 'terminal',
-      use_worktree: Boolean(capabilities.worktree),
+      command: `docker run --rm -it --cap-drop ALL --security-opt no-new-privileges --pids-limit 256 -v "%CD%:/workspace" -w /workspace ${image} bash`,
+      agent_id,
+      use_worktree: Boolean(caps.worktree),
       effective_sandbox: 'docker',
-      sandbox_label: `Docker (${image})`,
+      sandbox_label: `Docker shell (${image})`,
+      limit_note: 'The container can use the network, and the workspace folder is mounted read-write. This is not a locked-down sandbox.',
     };
   }
+  if (mode === 'docker') notes.push('Docker is not available, so this bot stays on Windows.');
 
-  if (use_worktree && capabilities && capabilities.worktree) {
+  if (wants_worktree && caps.worktree) {
     return {
       command: base_cmd,
-      agent_id: bot.agent_id || 'claude',
+      agent_id,
       use_worktree: true,
       effective_sandbox: 'worktree',
-      sandbox_label: 'Isolated Git Worktree',
+      sandbox_label: 'Git worktree',
+      limit_note: notes.join(' ') || null,
     };
   }
+  if (wants_worktree) notes.push('Git worktree is unavailable here, so this bot uses the shared folder.');
 
   return {
     command: base_cmd,
-    agent_id: bot.agent_id || 'claude',
+    agent_id,
     use_worktree: false,
     effective_sandbox: 'local',
-    sandbox_label: 'Local Workspace + Browser Sandbox',
+    sandbox_label: 'Shared folder',
+    limit_note: notes.join(' ') || null,
   };
 }
 
-// Inspects the last lines of a bot's rendered terminal screen and its hook_server status
-// to detect if the bot is waiting for Human-in-the-Loop approval.
+// Inspects the last lines of a bot's rendered terminal screen and its hook_server status.
+// A Claude hook status of waiting is trusted. Screen text counts only when a line looks like a prompt.
 function detect_approval_prompt(screen_text, hub_status) {
-  const tail = String(screen_text || '')
+  const lines = String(screen_text || '')
     .split('\n')
-    .slice(-14)
-    .join('\n')
-    .trim();
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== '');
+  const tail = lines.slice(-8).join('\n');
 
   if (hub_status && hub_status.status === 'waiting') {
     return {
@@ -109,18 +123,12 @@ function detect_approval_prompt(screen_text, hub_status) {
   }
 
   if (!tail) return null;
-  for (const pattern of APPROVAL_PATTERNS) {
-    if (pattern.test(tail)) {
-      const lines = tail.split('\n').filter((line) => line.trim() !== '');
-      const excerpt = lines.slice(-4).join(' · ').slice(0, 260);
-      return {
-        required: true,
-        state: 'pending',
-        prompt_excerpt: excerpt || 'Confirm action in terminal',
-      };
-    }
-  }
-  return null;
+  if (!CHOICE_LINE.test(tail) && !YN_LINE.test(tail) && !ASK_LINE.test(tail)) return null;
+  return {
+    required: true,
+    state: 'pending',
+    prompt_excerpt: lines.slice(-4).join(' · ').slice(0, 260) || 'Confirm action in terminal',
+  };
 }
 
 module.exports = {
@@ -128,4 +136,5 @@ module.exports = {
   detect_sandbox_capabilities,
   build_bot_launch_spec,
   detect_approval_prompt,
+  clean_docker_image,
 };

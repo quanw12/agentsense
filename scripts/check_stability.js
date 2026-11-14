@@ -15,6 +15,7 @@ const claude_hooks = require('../src/main/claude_hooks');
 const catalog = require('../src/renderer/agents');
 const squad_store = require('../src/main/bot_squad_store');
 const sandbox_env = require('../src/main/sandbox_env');
+const squad_policy = require('../src/main/squad_policy');
 
 let failed = 0;
 function check(name, ok) {
@@ -257,12 +258,63 @@ providers.set_file_for_tests(null);
   check('imported playbook restores the bot roster', imported_sq.bots.some((b) => b.handle === 'tester'));
   const approval = sandbox_env.detect_approval_prompt('Do you want to proceed?\n ❯ 1. Yes\n   2. No', null);
   check('inline approval detector catches confirmation prompt', Boolean(approval && approval.required));
+  const prose = sandbox_env.detect_approval_prompt(
+    'The plan requires approval from the lead before you continue.\nWaiting for approval is part of the process.',
+    null
+  );
+  check('approval detector ignores prose about approval', prose === null);
   const wsl_spec = sandbox_env.build_bot_launch_spec(
     { agent_id: 'claude', sandbox_mode: 'wsl' },
     { id: 'claude', command: 'claude' },
     { worktree: true, wsl: true, docker: false }
   );
   check('wsl sandbox mode wraps command in wsl.exe and keeps worktree isolation', wsl_spec.effective_sandbox === 'wsl' && wsl_spec.command.startsWith('wsl.exe') && wsl_spec.use_worktree === true);
+  check('wsl is described as a shell', wsl_spec.sandbox_label === 'WSL shell' && /separate machine/.test(wsl_spec.limit_note));
+  const docker_spec = sandbox_env.build_bot_launch_spec(
+    { agent_id: 'codex', sandbox_mode: 'docker' },
+    { id: 'codex', command: 'codex' },
+    { worktree: true, wsl: false, docker: true }
+  );
+  check('docker drops capabilities and blocks new privileges',
+    docker_spec.command.includes('--cap-drop ALL')
+    && docker_spec.command.includes('--security-opt no-new-privileges')
+    && docker_spec.sandbox_label.startsWith('Docker shell'));
+  const previous_image = process.env.AGENTSENSE_DOCKER_IMAGE;
+  process.env.AGENTSENSE_DOCKER_IMAGE = 'evil image; rm -rf /';
+  const unsafe_spec = sandbox_env.build_bot_launch_spec(
+    { agent_id: 'codex', sandbox_mode: 'docker' },
+    { id: 'codex', command: 'codex' },
+    { worktree: false, wsl: false, docker: true }
+  );
+  if (previous_image === undefined) delete process.env.AGENTSENSE_DOCKER_IMAGE;
+  else process.env.AGENTSENSE_DOCKER_IMAGE = previous_image;
+  check('a bad docker image cannot extend the command', unsafe_spec.command.includes('node:20-bookworm') && !unsafe_spec.command.includes('evil'));
+  const missing_docker = sandbox_env.build_bot_launch_spec(
+    { agent_id: 'claude', sandbox_mode: 'docker' },
+    { id: 'claude', command: 'claude' },
+    { worktree: false, wsl: false, docker: false }
+  );
+  check('missing docker falls back to the shared folder', missing_docker.effective_sandbox === 'local' && /Docker is not available/.test(missing_docker.limit_note));
+  check('a claude lead without the skill is told to delegate', /\/agentsense:lead/.test(squad_policy.delegation_note({
+    agent_id: 'claude', handle: 'lead', role: 'Chief', system_prompt: 'Coordinate.',
+  })));
+  check('a saved lead prompt is not doubled', squad_policy.delegation_note({
+    agent_id: 'claude', handle: 'lead', role: 'Chief', system_prompt: 'Use /agentsense:lead.',
+  }) === '');
+  check('a builder is not told to run the lead skill', squad_policy.delegation_note({
+    agent_id: 'codex', handle: 'builder', role: 'Implementation', system_prompt: 'Write code.',
+  }) === '');
+  check('codex keeps its own default model', squad_policy.model_launch_id('codex', 'gpt-5.1-codex') === null);
+  check('claude still receives its model id', squad_policy.model_launch_id('claude', 'sonnet') === 'sonnet');
+
+  fs.mkdirSync(path.join(root, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'node_modules', 'pkg', 'skip.js'), 'NEEDLE_SECRET');
+  fs.writeFileSync(path.join(root, 'src', 'hit.txt'), 'const x = 1;\nconst needle = "NEEDLE_SECRET";\n');
+  const hits = await files.search_text(root, 'NEEDLE_SECRET');
+  check('content search finds the line and skips node_modules',
+    hits.results.length === 1 && hits.results[0].rel.replace(/\\/g, '/') === 'src/hit.txt' && hits.results[0].line === 2);
+  const too_short = await files.search_text(root, 'a');
+  check('content search ignores a one-character query', too_short.results.length === 0);
 
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nStability checks passed');
   process.exit(failed ? 1 : 0);

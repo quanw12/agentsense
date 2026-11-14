@@ -19,6 +19,7 @@ const {
   build_bot_launch_spec,
   detect_approval_prompt,
 } = require('./sandbox_env');
+const { model_launch_id, delegation_note } = require('./squad_policy');
 const catalog = require('../renderer/agents');
 
 const SUBMIT_DELAY_MS = 160;
@@ -54,22 +55,14 @@ function find_live_terminal(terminal_id) {
 }
 
 // Resolves the live terminal bound to a bot in a workspace, or null if not running.
+// Only the terminal this bot started. A pane with the same display name is left alone.
+// A dead id is forgotten so the next message starts a new computer.
 function get_live_bot_terminal(workspace_id, bot_id) {
   const bound_id = squad_store.get_bot_binding(workspace_id, bot_id);
-  if (bound_id) {
-    const info = find_live_terminal(bound_id);
-    if (info && info.alive) return info;
-  }
-  // Also check if a pane with the bot's title already exists in this workspace
-  const bot = squad_store.read_state().bots.find((b) => b.id === bot_id);
-  if (!bot) return null;
-  const match = pty_manager
-    .list_terminals(workspace_id)
-    .find((t) => t.alive && String(t.title || '').split('|')[0].toLowerCase() === bot.name.toLowerCase());
-  if (match) {
-    squad_store.set_bot_binding(workspace_id, bot_id, match.terminal_id);
-    return match;
-  }
+  if (!bound_id) return null;
+  const info = find_live_terminal(bound_id);
+  if (info && info.alive) return info;
+  squad_store.set_bot_binding(workspace_id, bot_id, null);
   return null;
 }
 
@@ -109,8 +102,12 @@ async function ensure_bot_computer(workspace_id, bot_id, options = {}) {
     capabilities
   );
 
-  // Only pass model_id when cli_capabilities supports it (e.g. claude)
-  const use_model = target_entry.id === 'claude' ? bot.model_id : null;
+  // A model id is applied only when this CLI has a verified model env var.
+  const use_model = model_launch_id(target_entry.id, bot.model_id);
+  const model_note =
+    bot.model_id && !use_model && target_entry.id !== 'terminal'
+      ? `${target_entry.label} has no verified model flag, so ${bot.name} starts with the CLI default.`
+      : null;
   const title = encode_title(bot.name, target_entry.id, target_entry.label);
 
   const created = await pty_manager.create_terminal({
@@ -139,6 +136,8 @@ async function ensure_bot_computer(workspace_id, bot_id, options = {}) {
     sandbox_label: spec.sandbox_label,
     effective_sandbox: spec.effective_sandbox,
     fallback_note,
+    model_note,
+    limit_note: spec.limit_note || null,
   };
 }
 
@@ -450,9 +449,12 @@ function register_squad_ipc() {
       }
 
       const terminal_id = computer.terminal.terminal_id;
-      const initial_text = computer.fallback_note
-        ? `ℹ️ ${computer.fallback_note}\n\n⏳ Sending prompt to ${bot.name}…`
-        : `⏳ ${bot.name} is working in its isolated computer (${computer.sandbox_label || bot.sandbox_mode})…`;
+      const startup_notes = computer.created
+        ? [computer.fallback_note, computer.model_note, computer.limit_note].filter(Boolean)
+        : [];
+      const initial_text = startup_notes.length
+        ? `ℹ️ ${startup_notes.join(' ')}\n\n⏳ Sending prompt to ${bot.name}…`
+        : `⏳ ${bot.name} is working (${computer.sandbox_label || bot.sandbox_mode})…`;
 
       const bot_msg = squad_store.append_message(workspace_id, thread_id, {
         sender_type: 'bot',
@@ -487,8 +489,11 @@ function register_squad_ipc() {
       let effective_prompt = clean.replace(new RegExp(`^@${bot.handle}\\b\\s*`, 'i'), '').trim() || clean;
       if (!primed_terminals.has(terminal_id)) {
         primed_terminals.add(terminal_id);
-        if (bot.system_prompt && computer.terminal.agent_id !== 'terminal') {
-          effective_prompt = `[Role: ${bot.name} — ${bot.role}. ${bot.system_prompt}]\n\nTask: ${effective_prompt}`;
+        if (computer.terminal.agent_id !== 'terminal') {
+          const persona = [bot.system_prompt, delegation_note(bot)].filter(Boolean).join(' ');
+          if (persona) {
+            effective_prompt = `[Role: ${bot.name} — ${bot.role}. ${persona}]\n\nTask: ${effective_prompt}`;
+          }
         }
       }
 

@@ -325,7 +325,8 @@
   background: var(--panel_raised);
 }
 
-/* Status dot. Panes without a hub status keep the running (green) / exited (grey) dot; Claude panes show the hub state.
+/* Status dot. A Claude hook status wins when the hub has one.
+   Otherwise a running pane is working while bytes arrive and idle after it goes quiet.
    working pulses blue, waiting amber, done green, idle grey, ended is hollow grey. */
 .session_dot {
   flex: 0 0 auto;

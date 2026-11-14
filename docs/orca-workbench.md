@@ -19,7 +19,7 @@ vanilla JS, xterm.js and node-pty stack. No framework or Orca source code is bro
 | Hidden files | Yes | Dotfiles appear in the file tree |
 | Viewing text, images, PDF, media, Word | Available, works with the new tabs | Text is a read-only preview; PDF/media/docx use the existing viewers |
 | VS Code-style editor and autosave like Orca | Not yet | This version uses previews; Open launches the default app to edit the file. Not advertised as a Monaco editor or autosave |
-| Quick-open and repo-wide search like Orca | Not yet | Browse via the file tree and tabs; no repo-wide index/search yet |
+| Quick-open and repo-wide search like Orca | Names and text | Ctrl+P finds a file name. Ctrl+Shift+F finds a line of text and skips dependency and build folders. There is no separate project index |
 | Mobile and agent status | Unchanged | Mobile has a smoke test; detailed status hooks are Claude-only for now, other agents show process status |
 
 ## CLIs and install commands

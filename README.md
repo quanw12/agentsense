@@ -123,7 +123,9 @@ Windows x64: get `AgentSense-v1.0.0-beta.2-windows-x64.zip` from the release's A
 [Install](#install). `SHA256SUMS.txt` on the same page has the checksums.
 
 > [!NOTE]
-> This is a preview release and the app is not code-signed. You can also
+> This is a preview release and the app is not code-signed. The zip is
+> **v1.0.0-beta.2**. Squad chat, pane output/quiet status, and workspace text
+> search are on `main` and are not in that zip yet. You can also
 > [build from source](#build-from-source) in a few commands.
 
 ## Install
@@ -158,6 +160,7 @@ npm run start
 | --- | --- |
 | `npm run start` | Run the app in development |
 | `npm run smoke:workbench` | Real Electron/terminal checks for pages, explorer, drops and worktrees |
+| `npm run smoke:squad` | Squad chat: roster, a bot computer, and the live screen |
 | `npm run smoke:mobile` | End-to-end check of the mobile server (auth, attach, input, create, kill) and the pairing panel. Briefly listens on all interfaces, so Windows Firewall may ask once |
 | `npm run check:telegram` | Telegram bot checks against a fake Bot API (pairing, who it obeys, input, files) |
 | `npm run smoke:telegram` | Telegram bot end to end with a real pane; only the Telegram server is faked |
@@ -253,12 +256,43 @@ agent output and diffs are not filtered. The token is encrypted with Windows DPA
 The screen is the pane's current size, so a wide pane wraps on a phone. For close work, use
 [Mobile access](#mobile-access) over Tailscale, which has a full terminal and stays encrypted end to end.
 
+## Squad chat
+
+The sidebar **Squad** mode is a room for several bots in the workspace you have selected.
+Each bot is one of the catalog CLIs. A channel message goes to the bots you @mention, or to
+the channel lead when you mention nobody. `@all` talks to every member of that channel.
+
+A bot's computer is one of four things:
+
+| Mode | What actually runs |
+| --- | --- |
+| Git worktree | A worktree under `<repo>.worktrees/`, branch `agentsense/<name>`. This is the default. |
+| WSL shell | Your default WSL distro, in that folder. It is not a separate machine. |
+| Docker shell | `docker run` of `node:20-bookworm` (or `AGENTSENSE_DOCKER_IMAGE`) with the workspace mounted read-write. Capabilities are dropped and new privileges are blocked. The container can still use the network. This is not a locked-down sandbox. |
+| Shared folder | The workspace folder itself, plus a separate browser profile for that bot. |
+
+If WSL, Docker, or git is missing, the bot falls back and the first chat line says so.
+A model id is passed only when that CLI has a verified model variable in this build. Today
+that is Claude (`ANTHROPIC_MODEL`). Other CLIs start with their own default, and the chat
+says so once.
+
+Squad chat and the agent kit are two layers of the same job. The chat is where you talk to
+the roster. A Claude bot whose role is a lead is told to start a multi-file job with
+`/agentsense:lead`. That skill writes the plan, runs workers in their own worktrees, and
+does not merge until you approve. The other bots do the single task you give them in the
+chat. A bot is bound only to the terminal it started. A pane you opened yourself with the
+same name is not taken over.
+
+Playbooks are Markdown you can export and import. They replace the roster and the channels.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
 | --- | --- |
 | <kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd> | Next / previous page |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> | Toggle the file explorer |
+| <kbd>Ctrl</kbd>+<kbd>P</kbd> | Find a file by name |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | Find a line of text in the workspace |
 | <kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>-</kbd> / <kbd>0</kbd> | Zoom in / out / reset |
 | <kbd>F11</kbd> | Fullscreen |
 | Double-click a pane title | Maximize / restore the pane |
@@ -269,8 +303,8 @@ The screen is the pane's current size, so a wide pane wraps on a phone. For clos
 main.js / preload.js     Electron main process + contextBridge API (window.hub)
 src/main/                pty manager, workspaces, sessions, worktrees, hook server,
                          mobile access server, state store
-src/renderer/            UI: sidebar, launch page, terminal grid, file panel, dashboard,
-                         mobile access panel (vanilla JS + xterm)
+src/renderer/            UI: sidebar, launch page, terminal grid, file panel, squad chat,
+                         dashboard, mobile access panel (vanilla JS + xterm)
 src/mobile/              phone page served by the mobile access server (vanilla JS + xterm)
 assets/                  brand mark (icon.png 512 + icon-256.png for the .ico)
 build/                   app icons (generated: npm run icons)

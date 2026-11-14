@@ -4,10 +4,10 @@
   'use strict';
 
   const SANDBOX_LABELS = {
-    worktree: '🌳 Git Worktree',
-    wsl: '🐧 WSL2 Linux VM',
-    docker: '🐳 Docker Container',
-    local: '📁 Local + Browser',
+    worktree: '🌳 Git worktree',
+    wsl: '🐧 WSL shell',
+    docker: '🐳 Docker shell',
+    local: '📁 Shared folder',
   };
 
   const PLAYBOOK_TEMPLATES = {
@@ -25,7 +25,7 @@
         '- **model**: sonnet',
         '- **sandbox**: worktree',
         '- **color**: #5b8def',
-        '- **prompt**: You are Maus Lead (Chief of Staff). Break down complex goals, coordinate the squad, review architecture and diffs.',
+        '- **prompt**: You are Maus Lead (Chief of Staff). Break down complex goals, coordinate the squad, and review diffs. When a job touches several files, start it with /agentsense:lead and do not merge until the user approves.',
         '',
         '### 🛠️ Forge Builder (@builder)',
         '- **id**: bot-builder',
@@ -282,7 +282,7 @@
 
       // Direct Bots Roster section
       const bot_head = el('div', 'sq_section_head');
-      bot_head.append(el('span', '', 'Bot Roster (1-on-1 & VMs)'));
+      bot_head.append(el('span', '', 'Bot roster'));
       const add_bot_btn = el('button', 'sq_section_add', '+');
       add_bot_btn.type = 'button';
       add_bot_btn.title = 'Add a new AI Bot to the squad';
@@ -418,7 +418,7 @@
 
         // 3. Sandbox / VM selector
         const sb_group = el('div', 'sq_control_group');
-        sb_group.append(el('span', 'sq_control_label', 'VM/Sandbox:'));
+        sb_group.append(el('span', 'sq_control_label', 'Computer:'));
         const sb_select = el('select', 'sq_select');
         sb_select.dataset.action = 'switch_bot_sandbox';
         for (const [mode_key, mode_label] of Object.entries(SANDBOX_LABELS)) {
@@ -478,7 +478,7 @@
           el(
             'p',
             'sq_empty_desc',
-            'Once a workspace folder is selected, your AI Bot Squad can spin up isolated Git Worktrees, WSL2/Docker sandboxes, and Browser sessions for that project.'
+            'Pick a workspace. Each bot then runs in a git worktree, a WSL shell, a Docker shell, or the shared folder. WSL and Docker are shells on this PC, not separate locked machines.'
           )
         );
         msg_list.append(empty);
@@ -493,7 +493,7 @@
           el(
             'p',
             'sq_empty_desc',
-            'Each bot runs on your local CLIs (Claude Code, Codex, Grok, Gemini…) inside its own isolated worktree/VM and browser sandbox. Use @mentions in channels to coordinate multiple bots at once.'
+            'Mention a bot, or @all. A Claude lead plans a multi-file job with /agentsense:lead, which runs workers in their own worktrees and waits for you before merging. Other bots do the task you give them in this chat.'
           )
         );
         const chips = el('div', 'sq_starter_chips');
@@ -747,7 +747,7 @@
       const boot_btn = el(
         'button',
         'sq_btn primary',
-        live_screen_cache.alive ? '🔄 Restart VM' : '⚡ Boot VM'
+        live_screen_cache.alive ? '🔄 Restart computer' : '⚡ Boot computer'
       );
       boot_btn.type = 'button';
       boot_btn.dataset.action = 'boot_bot_computer';
@@ -774,7 +774,7 @@
       const tab_defs = [
         { id: 'screen', label: '🖥️ Live Screen & Takeover' },
         { id: 'browser', label: '🌐 Browser Sandbox' },
-        { id: 'env', label: '🌳 VM / Worktree Info' },
+        { id: 'env', label: '🌳 Worktree & shell' },
       ];
       for (const t of tab_defs) {
         const b = el('button', 'sq_comp_tab' + (computer_tab === t.id ? ' active' : ''), t.label);
@@ -804,7 +804,7 @@
           'sq_screen_box',
           live_screen_cache.alive
             ? live_screen_cache.text || '(Waiting for terminal output…)'
-            : `Click "⚡ Boot VM" or send a chat message to launch ${bot.name}'s isolated environment.`
+            : `Click "⚡ Boot computer" or send a chat message to launch ${bot.name}.`
         );
         screen_pre.id = 'sq_live_screen_box';
 
@@ -914,7 +914,7 @@
         add_row('Browser Partition', `persist:bot_${bot.id}`);
 
         const cap_card = el('div', 'sq_env_card');
-        cap_card.append(el('strong', '', 'Host Virtualization & Sandbox Capabilities'));
+        cap_card.append(el('strong', '', 'What this PC can run'));
         const caps = squad_state.capabilities || {};
         const add_cap = (name, ok) => {
           const r = el('div', 'sq_env_row');
@@ -922,8 +922,8 @@
           cap_card.append(r);
         };
         add_cap('Git Worktree Isolation', caps.worktree);
-        add_cap('WSL2 Linux VM (wsl.exe)', caps.wsl);
-        add_cap('Docker Container Engine', caps.docker);
+        add_cap('WSL shell (wsl.exe)', caps.wsl);
+        add_cap('Docker engine', caps.docker);
         add_cap('Isolated Chromium Browser', caps.browser);
 
         body.append(card, cap_card);
@@ -955,7 +955,7 @@
         if (screen_box && computer_tab === 'screen') {
           screen_box.textContent = live_screen_cache.alive
             ? live_screen_cache.text || '(Waiting for terminal output…)'
-            : `Click "⚡ Boot VM" or send a chat message to launch ${bot.name}'s isolated environment.`;
+            : `Click "⚡ Boot computer" or send a chat message to launch ${bot.name}.`;
           screen_box.scrollTop = screen_box.scrollHeight;
         }
         if (prev_alive !== live_screen_cache.alive || prev_terminal !== live_screen_cache.terminal_id) {
