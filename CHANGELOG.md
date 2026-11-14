@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add an Appearance page at the bottom of the sidebar: dark, light, or the Windows color mode, plus an accent color. Open terminals recolor in place.
+- Show a squad bot above the chat. It sits ready, works as soon as a prompt is sent, and pauses when a bot needs approval.
 - Add Squad chat: a roster, channels, and one computer per bot (git worktree, WSL shell, Docker shell, or the shared folder). A Claude lead is pointed at `/agentsense:lead` for multi-file jobs. WSL and Docker are labeled as shells. Docker drops capabilities and blocks new privileges. A bot stays bound to the terminal it started, and a model is passed only when that CLI has a verified model variable.
 - Show output or quiet on every running pane. A Claude hook status still wins when the hub has one.
 - Add Ctrl+Shift+F to search file text in the workspace. Ctrl+P still finds file names. Both skip dependency and build folders.

@@ -514,7 +514,7 @@
   max-height: 100%;
   object-fit: contain;
   /* Checkerboard so transparent images stay visible on the black background. */
-  background: repeating-conic-gradient(#2a2a2e 0% 25%, #1c1c1f 0% 50%) 0 0 / 16px 16px;
+  background: repeating-conic-gradient(var(--border_strong) 0% 25%, var(--panel) 0% 50%) 0 0 / 16px 16px;
 }
 
 .tf-video {
@@ -535,7 +535,7 @@
 }
 
 .tf-frame.tf-doc {
-  background: #3a3a3e;
+  background: var(--panel_raised);
 }
 
 .tf-unsupported {
@@ -562,16 +562,16 @@
   gap: 4px;
   overflow: auto;
   padding: 4px 6px 0;
-  background: #111;
+  background: var(--panel);
 }
 .tf-file-tab-wrap { display: inline-flex; align-items: center; }
 .tf-file-tab, .tf-file-tab-close {
   border: 0;
   background: transparent;
-  color: #ccc;
+  color: var(--muted);
   font: 12px "Segoe UI", sans-serif;
 }
-.tf-file-tab-active { color: #fff; }
+.tf-file-tab-active { color: var(--text); }
 .tf-file-tab-preview { font-style: italic; }
 /* A dragged tab or tree row must reach the pane under it, not the editor or PDF frame inside. */
 .tg-internal-drag .tf-body { pointer-events: none; }
@@ -582,24 +582,24 @@
   min-height: 0;
   resize: none;
   border: 0;
-  background: #000;
-  color: #ececec;
+  background: var(--bg);
+  color: var(--text);
   font: 13px/1.45 "Cascadia Mono", Consolas, monospace;
   padding: 8px;
 }
-.tf-save { margin-left: 8px; color: #9a9; }
+.tf-save { margin-left: 8px; color: var(--running); }
 .tg-quick {
   position: absolute;
   z-index: 20;
   left: 12px;
   right: 12px;
   top: 8px;
-  background: #161616;
-  border: 1px solid #333;
+  background: var(--panel_raised);
+  border: 1px solid var(--border_strong);
   padding: 8px;
 }
 .tg-quick-hint {
-  color: #888;
+  color: var(--muted);
   font-size: 11px;
   min-height: 16px;
   margin: 4px 0;
@@ -611,22 +611,22 @@
 .tg-quick-input, .tg-quick-item {
   width: 100%;
   box-sizing: border-box;
-  background: #000;
-  color: #eee;
-  border: 1px solid #333;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border_strong);
   text-align: left;
 }
 .tg-quick-item.tg-quick-active {
-  background: #222;
+  background: var(--panel_raised);
 }
 .tg-quick-path, .tg-quick-meta {
   display: block;
 }
 .tg-quick-meta {
-  color: #888;
+  color: var(--muted);
   font-size: 11px;
 }
-.tg-version { margin-left: auto; color: #888; font-size: 12px; }
+.tg-version { margin-left: auto; color: var(--muted); font-size: 12px; }
 
 /* While dragging anywhere over the grid, keep the terminal text cursor quiet. */
 .tg-pane.tg-drop-target .xterm {

@@ -115,6 +115,51 @@
     return node;
   }
 
+  function svg_el(name, attrs) {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', name);
+    for (const key of Object.keys(attrs || {})) node.setAttribute(key, attrs[key]);
+    return node;
+  }
+
+  // A small original desk bot. CSS animates it. No image file and no animation frame loop.
+  function create_squad_mascot() {
+    const root = el('div', 'sq_mascot');
+    root.dataset.state = 'idle';
+    const svg = svg_el('svg', { class: 'sq_mascot_svg', viewBox: '0 0 64 52', 'aria-hidden': 'true' });
+    const bob = svg_el('g', { class: 'sq_bob' });
+    bob.append(
+      svg_el('line', { class: 'sq_antenna', x1: '32', y1: '9', x2: '32', y2: '3' }),
+      svg_el('circle', { class: 'sq_antenna_dot', cx: '32', cy: '3', r: '2.2' }),
+      svg_el('rect', { class: 'sq_shell sq_head', x: '18', y: '9', width: '28', height: '16', rx: '6' })
+    );
+    const eyes = svg_el('g', { class: 'sq_eyes' });
+    eyes.append(
+      svg_el('rect', { class: 'sq_eye', x: '23', y: '14', width: '6', height: '6', rx: '2' }),
+      svg_el('rect', { class: 'sq_eye', x: '35', y: '14', width: '6', height: '6', rx: '2' }),
+      svg_el('rect', { class: 'sq_pupil', x: '25', y: '16', width: '2.4', height: '2.4', rx: '1' }),
+      svg_el('rect', { class: 'sq_pupil', x: '37', y: '16', width: '2.4', height: '2.4', rx: '1' })
+    );
+    bob.append(eyes);
+    bob.append(svg_el('rect', { class: 'sq_shell sq_body', x: '16', y: '27', width: '32', height: '16', rx: '5' }));
+    bob.append(svg_el('rect', { class: 'sq_screen', x: '26', y: '31', width: '12', height: '7', rx: '1.5' }));
+    const arm_left = svg_el('g', { class: 'sq_arm sq_arm_left' });
+    arm_left.append(svg_el('rect', { class: 'sq_arm_shape', x: '5', y: '29', width: '12', height: '5', rx: '2' }));
+    const arm_right = svg_el('g', { class: 'sq_arm sq_arm_right' });
+    arm_right.append(svg_el('rect', { class: 'sq_arm_shape', x: '47', y: '29', width: '12', height: '5', rx: '2' }));
+    bob.append(arm_left, arm_right, svg_el('rect', { class: 'sq_feet', x: '22', y: '43', width: '20', height: '3', rx: '1.5' }));
+    svg.append(bob);
+
+    const copy = el('div', 'sq_mascot_copy');
+    const title = el('div', 'sq_mascot_title', 'Ready');
+    const detail = el('div', 'sq_mascot_detail', 'Send a prompt and the bot gets to work.');
+    detail.setAttribute('role', 'status');
+    detail.setAttribute('aria-live', 'polite');
+    copy.append(title, detail);
+    const bar = el('div', 'sq_mascot_bar');
+    bar.append(root, copy);
+    return { bar, root, title, detail };
+  }
+
   function catalog_list() {
     return Array.isArray(window.AGENT_CATALOG) ? window.AGENT_CATALOG : [];
   }
@@ -145,13 +190,63 @@
     let computer_tab = 'screen'; // 'screen' | 'browser' | 'env'
     let live_screen_cache = { alive: false, text: '', terminal_id: null, cwd: null, worktree: null, status: 'idle' };
     let screen_poll_timer = null;
+    let sends_in_flight = 0;
 
     // Build root skeleton
     const root = el('div', 'sq_root');
     const rail = el('aside', 'sq_rail');
     const center = el('section', 'sq_center');
     const drawer = el('aside', 'sq_computer_drawer');
+    const stream = el('div', 'sq_stream');
+    const mascot = create_squad_mascot();
+    center.append(mascot.bar, stream);
     root.append(rail, center, drawer);
+
+    function squad_pose() {
+      let waiting = 0;
+      let working = 0;
+      for (const msg of messages) {
+        if (!msg || msg.sender_type === 'user') continue;
+        if (msg.status === 'waiting') waiting += 1;
+        else if (msg.status === 'working') working += 1;
+      }
+      if (waiting > 0) {
+        return {
+          state: 'waiting',
+          title: 'Needs you',
+          detail: waiting === 1
+            ? 'A bot is waiting for your approval.'
+            : `${waiting} bots are waiting for your approval.`,
+        };
+      }
+      if (working > 0 || sends_in_flight > 0) {
+        const count = Math.max(working, 1);
+        return {
+          state: 'working',
+          title: 'Working',
+          detail: count === 1
+            ? 'The bot is working on the prompt.'
+            : `${count} bots are working on the prompt.`,
+        };
+      }
+      return {
+        state: 'idle',
+        title: 'Ready',
+        detail: 'Send a prompt and the bot gets to work.',
+      };
+    }
+
+    function paint_mascot() {
+      const pose = squad_pose();
+      if (
+        mascot.root.dataset.state === pose.state
+        && mascot.title.textContent === pose.title
+        && mascot.detail.textContent === pose.detail
+      ) return;
+      mascot.root.dataset.state = pose.state;
+      mascot.title.textContent = pose.title;
+      mascot.detail.textContent = pose.detail;
+    }
     container.replaceChildren(root);
 
     function active_bot() {
@@ -331,7 +426,7 @@
 
     // ---- Render Center Chat ----
     function render_center() {
-      center.replaceChildren();
+      stream.replaceChildren();
       const header = el('div', 'sq_chat_header');
       const left = el('div', 'sq_chat_header_left');
       const target_bot = active_bot();
@@ -582,7 +677,8 @@
       row.append(input, send_btn);
       composer.append(mention_bar, row);
 
-      center.append(header, msg_list, composer);
+      stream.append(header, msg_list, composer);
+      paint_mascot();
       msg_list.scrollTop = msg_list.scrollHeight;
     }
 
@@ -709,6 +805,8 @@
         window.alert('Please add or select a workspace folder in the left sidebar first.');
         return;
       }
+      sends_in_flight += 1;
+      paint_mascot();
       try {
         await window.hub.squad.send_message({
           workspace_id: current_workspace.id,
@@ -717,6 +815,9 @@
         });
       } catch (error) {
         window.alert(`Could not send message: ${error.message}`);
+      } finally {
+        sends_in_flight = Math.max(0, sends_in_flight - 1);
+        paint_mascot();
       }
     }
 

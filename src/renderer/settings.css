@@ -1,0 +1,211 @@
+/* Appearance page. It sits over the workbench; the panes underneath keep running. */
+
+.set_overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg) 35%, transparent);
+}
+
+.set_dialog {
+  width: min(440px, 100%);
+  max-height: min(640px, 100%);
+  overflow: auto;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--border_strong);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 16px 40px color-mix(in srgb, #000 35%, transparent);
+}
+
+.set_head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.set_title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.set_lead,
+.set_note,
+.set_mode_detail {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.set_close,
+.set_reset,
+.set_swatch {
+  border: 1px solid var(--border_strong);
+  background: var(--panel_raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.set_close,
+.set_reset {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+}
+
+.set_close:hover,
+.set_reset:hover,
+.set_swatch:hover,
+.set_mode:hover {
+  border-color: var(--accent_line);
+}
+
+.set_block {
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.set_legend {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.set_modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.set_mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.set_mode:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent_fill);
+}
+
+.set_mode input {
+  margin-top: 2px;
+}
+
+.set_mode_copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.set_mode_label {
+  font-weight: 600;
+}
+
+.set_swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.set_swatch {
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
+}
+
+.set_swatch::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--swatch);
+  vertical-align: -1px;
+}
+
+.set_swatch[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent_fill);
+}
+
+.set_custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.set_color {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border_strong);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.set_preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.set_preview_bar {
+  width: 8px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+.set_preview_text {
+  font-weight: 600;
+}
+
+.set_preview_muted {
+  color: var(--muted);
+}
+
+.set_preview_accent {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+}
+
+.set_note {
+  margin-top: 12px;
+}
+
+.set_reset {
+  margin-top: 4px;
+}

@@ -285,6 +285,10 @@ same name is not taken over.
 
 Playbooks are Markdown you can export and import. They replace the roster and the channels.
 
+A drawn bot sits above the chat. It is ready while the room is quiet, starts working the moment you send a prompt, and switches to "Needs you" when a bot is waiting for approval. The motion is CSS. It stops when Windows asks for reduced motion.
+
+**Appearance**, at the bottom of the sidebar, switches dark, light, or the Windows color mode and sets the accent color. The choice stays on this PC. Open terminals pick up the colors without a restart. A bot's live screen stays dark so its text stays readable.
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |

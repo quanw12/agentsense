@@ -190,7 +190,14 @@
       set_mode('squad');
       on_mode_change('squad');
     });
-    root.append(header, mode_switcher, list, hint);
+    const appearance_button = create_element('button', 'sidebar_appearance', 'Appearance');
+    appearance_button.type = 'button';
+    appearance_button.title = 'Dark, light, or Windows color, and the accent color';
+    appearance_button.setAttribute('aria-label', 'Appearance');
+    appearance_button.addEventListener('click', () => {
+      if (typeof window.open_settings === 'function') window.open_settings();
+    });
+    root.append(header, mode_switcher, list, hint, appearance_button);
     container.replaceChildren(root);
     container.dataset.loaded = 'false';
 

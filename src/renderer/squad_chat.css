@@ -264,6 +264,134 @@
   background: var(--bg);
 }
 
+.sq_stream {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The squad bot stays mounted. Streaming a reply replaces the chat column, not this bar. */
+.sq_mascot_bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.sq_mascot {
+  width: 48px;
+  height: 40px;
+  flex: 0 0 auto;
+}
+
+.sq_mascot_svg {
+  display: block;
+  width: 48px;
+  height: 40px;
+  overflow: visible;
+}
+
+.sq_antenna {
+  stroke: var(--muted);
+  stroke-width: 1.4;
+}
+
+.sq_antenna_dot { fill: var(--muted); }
+.sq_mascot[data-state="working"] .sq_antenna_dot { fill: var(--accent); }
+.sq_mascot[data-state="waiting"] .sq_antenna_dot { fill: var(--warning); }
+
+.sq_shell {
+  fill: var(--panel_raised);
+  stroke: var(--border_strong);
+  stroke-width: 1;
+}
+
+.sq_eye { fill: var(--text); }
+.sq_pupil { fill: var(--bg); }
+.sq_screen { fill: var(--accent); }
+.sq_arm_shape,
+.sq_feet { fill: var(--muted); }
+
+.sq_arm_left,
+.sq_arm_right { transform-box: view-box; }
+.sq_arm_left { transform-origin: 17px 31px; }
+.sq_arm_right { transform-origin: 47px 31px; }
+.sq_eyes { transform-origin: 32px 17px; transform-box: fill-box; }
+
+.sq_mascot[data-state="idle"] .sq_bob {
+  animation: sq_bob 3.2s ease-in-out infinite;
+}
+
+.sq_mascot[data-state="working"] .sq_arm_left,
+.sq_mascot[data-state="working"] .sq_arm_right {
+  animation: sq_type 0.28s ease-in-out infinite alternate;
+}
+
+.sq_mascot[data-state="working"] .sq_antenna_dot {
+  animation: sq_pulse 0.8s ease-in-out infinite;
+}
+
+.sq_mascot .sq_eyes {
+  animation: sq_blink 4.8s step-end infinite;
+}
+
+.sq_mascot[data-state="waiting"] .sq_eyes {
+  animation: none;
+  transform: translateY(-0.6px);
+}
+
+.sq_mascot_copy {
+  min-width: 0;
+}
+
+.sq_mascot_title {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.sq_mascot_detail {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes sq_bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(1.4px); }
+}
+
+@keyframes sq_type {
+  from { transform: rotate(10deg); }
+  to { transform: rotate(-16deg); }
+}
+
+@keyframes sq_pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes sq_blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  94%, 97% { transform: scaleY(0.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sq_mascot .sq_bob,
+  .sq_mascot .sq_arm,
+  .sq_mascot .sq_antenna_dot,
+  .sq_mascot .sq_eyes {
+    animation: none;
+  }
+}
+
 .sq_chat_header {
   display: flex;
   align-items: center;
@@ -625,7 +753,7 @@
 .sq_mini_btn.approve {
   background: rgba(63, 185, 80, 0.16);
   border-color: rgba(63, 185, 80, 0.5);
-  color: #7ee787;
+  color: var(--running);
 }
 
 .sq_mini_btn.deny {
@@ -782,7 +910,8 @@
   border-radius: 7px;
   background: #000000;
   border: 1px solid var(--border_strong);
-  color: var(--text);
+  /* The live screen is a terminal dump. Keep light glyphs on black in every theme. */
+  color: #d0d0d0;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 11.5px;
   line-height: 1.4;
